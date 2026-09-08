@@ -83,7 +83,11 @@ happen. What speed decides is whether you are there for them: at sixty, five
 minutes of game time passes in about five seconds, and a base under attack goes
 unattended through all of it. Runs longer than ten seconds of game time
 therefore say what they will cost and start nothing until the same command is
-given again, so there is a moment to save first.
+given again. The warning also writes an autosave, named `_autosave-forge`, so
+there is a state to go back to; the name is not one the game's own rotation
+uses, so nothing of yours is overwritten. It is written before anything is
+built, so loading it puts you back where you were rather than into the middle
+of a run.
 
 Every entity is held at full charge for the duration. Combinators are
 electrical devices, and an unpowered one does not compute, so a run on a

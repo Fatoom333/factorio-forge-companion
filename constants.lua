@@ -23,4 +23,10 @@ return {
     -- How long a warning stands before the same command counts as a fresh
     -- request rather than a confirmation. One minute of game time.
     confirmation_lasts = 3600,
+
+    -- The name handed to game.auto_save, which prefixes it with `_autosave`,
+    -- giving `_autosave-forge`. Deliberately not a number: the game's own
+    -- rotation writes `_autosave1` and up, so nothing of the player's -- their
+    -- saves or their autosaves -- is overwritten by this one.
+    autosave_name = "-forge",
 }
