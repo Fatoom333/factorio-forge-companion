@@ -1,5 +1,8 @@
 # Anything the mod writes belongs to the player's game, not to this repository.
 script-output/
+
+# Build output.
+dist/
 *.zip
 
 # Editors / OS
