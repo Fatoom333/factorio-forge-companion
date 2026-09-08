@@ -169,6 +169,41 @@ function M.open(player)
     return window
 end
 
+--- What the game says is in the cursor, in words.
+---
+--- Shown instead of a flat "nothing in hand" because that sentence was wrong
+--- twice while a blueprint was plainly being held, and gave nothing to work
+--- from. A window that cannot see something should at least say what it does
+--- see.
+local function describe_cursor(player)
+    local parts = {}
+
+    local stack = player.cursor_stack
+    if stack == nil then
+        parts[#parts + 1] = "no stack"
+    elseif not stack.valid_for_read then
+        parts[#parts + 1] = "empty stack"
+    else
+        parts[#parts + 1] = "stack " .. stack.name
+    end
+
+    local ok, record = pcall(function()
+        return player.cursor_record
+    end)
+    if not ok then
+        parts[#parts + 1] = "no cursor_record in this version"
+    elseif record == nil then
+        parts[#parts + 1] = "no record"
+    else
+        local readable, kind = pcall(function()
+            return record.type
+        end)
+        parts[#parts + 1] = "record " .. (readable and tostring(kind) or "unreadable")
+    end
+
+    return table.concat(parts, ", ")
+end
+
 --- Keep the window honest about what is in the cursor.
 function M.refresh(player)
     local window = container(player)[NAME]
@@ -179,7 +214,7 @@ function M.refresh(player)
     local label = find(window, "forge-held")
     if label then
         label.caption = held and { "forge.window-blueprint-held" }
-            or { "forge.window-nothing-held" }
+            or { "forge.window-nothing-held-detail", describe_cursor(player) }
     end
     for _, name in pairs({ "forge-do-verify", "forge-do-circuit" }) do
         local button = find(window, name)
