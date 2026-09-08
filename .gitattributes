@@ -1,0 +1,8 @@
+# Factorio reads these on every platform, so keep them identical everywhere.
+* text=auto eol=lf
+*.lua text eol=lf
+*.cfg text eol=lf
+*.json text eol=lf
+
+*.png binary
+*.zip binary
