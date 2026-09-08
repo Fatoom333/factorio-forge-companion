@@ -9,6 +9,7 @@
 --- Everything lands in `script-output/factorio-forge/`.
 
 local circuit = require("circuit")
+local constants = require("constants")
 local scratch = require("scratch")
 
 local OUTPUT = "factorio-forge/"
@@ -209,11 +210,43 @@ commands.add_command("forge-verify", { "forge.cmd-verify" }, function(event)
     verify_blueprint(player, event.parameter)
 end)
 
+--- A run costs the world the ticks it asks for, whatever speed they pass at,
+--- and the player cannot step in while they do. Long runs therefore say what
+--- they will cost and wait to be asked twice; the second command within the
+--- minute is the confirmation.
+local function confirmed(player, parameter, ticks)
+    if ticks <= constants.confirm_above_ticks then
+        return true
+    end
+
+    local pending = storage.pending_run
+    if pending
+        and pending.parameter == parameter
+        and game.tick - pending.at <= constants.confirmation_lasts
+    then
+        storage.pending_run = nil
+        return true
+    end
+
+    storage.pending_run = { parameter = parameter, at = game.tick }
+    player.print({
+        "forge.circuit-cost",
+        ticks,
+        string.format("%.1f", ticks / 60),
+        settings.global["forge-circuit-speed"].value,
+    })
+    player.print({ "forge.circuit-confirm" })
+    return false
+end
+
 commands.add_command("forge-circuit", { "forge.cmd-circuit" }, function(event)
     local player = game.get_player(event.player_index)
     local ticks, text = string.match(event.parameter or "", "^(%d+)%s+(.+)$")
     if not ticks then
         player.print({ "forge.circuit-usage" })
+        return
+    end
+    if not confirmed(player, event.parameter, tonumber(ticks)) then
         return
     end
     circuit.start(player, text, tonumber(ticks))

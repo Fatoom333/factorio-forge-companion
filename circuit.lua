@@ -205,7 +205,9 @@ function M.start(player, text, ticks)
 
     -- The point of running outside the normal rhythm: a five minute timer is
     -- eighteen thousand ticks, and waiting five real minutes for it is absurd.
-    game.speed = 60
+    -- How far outside it is the player's setting, since on a live base the
+    -- difference is between watching the run and merely surviving it.
+    game.speed = settings.global["forge-circuit-speed"].value
 
     script.on_event(defines.events.on_tick, M.on_tick)
     player.print({ "forge.circuit-started", #entities, ticks })
