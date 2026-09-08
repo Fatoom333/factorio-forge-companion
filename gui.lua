@@ -42,30 +42,25 @@ function M.ensure_button(player)
     })
 end
 
---- The blueprint the player is holding, as a string, or nil.
----
---- Two places to look, not one. A blueprint taken out of the inventory is an
---- item in the cursor; one taken out of the library is a record, which lives
---- in `cursor_record` and is not an item at all. Checking only the stack made
---- the window insist there was nothing in hand while a blueprint was plainly
---- being held -- the library is where most blueprints are kept.
 --- Rebuild a library record as a blueprint string.
 ---
---- The record knows its own contents, and a fresh blueprint made from them
---- exports like any other. Slower and longer than asking the record to export
---- itself, which is why it is the second choice rather than the first.
+--- The record knows its own entities and tiles, and a fresh blueprint made
+--- from them exports like any other. Slower than asking the record to export
+--- itself, which is why it is the second choice.
+---
+---@return string|nil, string what came out, and why not if nothing did
 local function rebuild(record)
     local inventory = game.create_inventory(1)
     inventory[1].set_stack({ name = "blueprint" })
 
-    local ok = pcall(function()
+    local ok, err = pcall(function()
         inventory[1].set_blueprint_entities(record.get_blueprint_entities())
         local tiles = record.get_blueprint_tiles()
         if tiles then
             inventory[1].set_blueprint_tiles(tiles)
         end
-        -- Carried across so the copy is the same blueprint, not merely the
-        -- same entities: a city block without its grid snapping is a
+        -- Carried across so the copy is the same blueprint rather than merely
+        -- the same entities: a city block without its grid snapping is a
         -- different thing.
         inventory[1].label = record.label
         inventory[1].blueprint_snap_to_grid = record.blueprint_snap_to_grid
@@ -76,32 +71,54 @@ local function rebuild(record)
 
     local text = ok and inventory[1].export_stack() or nil
     inventory.destroy()
-    if text == "" then
-        return nil
+    if text ~= nil and text ~= "" then
+        return text, ""
     end
-    return text
+    return nil, ok and "rebuilt but empty" or ("rebuild failed: " .. tostring(err))
 end
 
+--- The blueprint the player is holding, as a string, or nil and the reason.
+---
+--- Two places to look, not one. A blueprint out of the inventory is an item in
+--- the cursor; one out of the library is a record, which is not an item at
+--- all. Nothing here tests a property before using it: the previous version
+--- checked `record.valid`, and on a record with no such field fell through in
+--- silence -- which is how the window came to insist that a blueprint in plain
+--- sight was not there.
+---@return string|nil, string
 function M.blueprint_in_hand(player)
     local record = player.cursor_record
-    if record ~= nil and record.valid and record.type == "blueprint" then
-        local ok, text = pcall(function()
-            return record.export_stack()
+    if record ~= nil then
+        local kind
+        pcall(function()
+            kind = record.type
         end)
-        if ok and text ~= nil and text ~= "" then
-            return text
+        if kind == "blueprint" then
+            local exported
+            local exported_ok, err = pcall(function()
+                exported = record.export_stack()
+            end)
+            if exported ~= nil and exported ~= "" then
+                return exported, ""
+            end
+            local rebuilt, why = rebuild(record)
+            if rebuilt then
+                return rebuilt, ""
+            end
+            local first = exported_ok and "export gave nothing"
+                or ("export failed: " .. tostring(err))
+            return nil, first .. "; " .. why
         end
-        return rebuild(record)
     end
 
     local stack = player.cursor_stack
     if stack == nil or not stack.valid_for_read then
-        return nil
+        return nil, ""
     end
     if not stack.is_blueprint or not stack.is_blueprint_setup() then
-        return nil
+        return nil, "the item in hand is not a blueprint"
     end
-    return stack.export_stack()
+    return stack.export_stack(), ""
 end
 
 --- Find an element by name anywhere below this one.
@@ -243,11 +260,15 @@ function M.refresh(player)
     if window == nil then
         return
     end
-    local held = M.blueprint_in_hand(player) ~= nil
+    local text, why = M.blueprint_in_hand(player)
+    local held = text ~= nil
     local label = find(window, "forge-held")
     if label then
         label.caption = held and { "forge.window-blueprint-held" }
-            or { "forge.window-nothing-held-detail", describe_cursor(player) }
+            or {
+                "forge.window-nothing-held-detail",
+                describe_cursor(player) .. (why ~= "" and (" (" .. why .. ")") or ""),
+            }
     end
     for _, name in pairs({ "forge-do-verify", "forge-do-circuit" }) do
         local button = find(window, name)
