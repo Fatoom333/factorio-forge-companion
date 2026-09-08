@@ -215,12 +215,43 @@ local function verify_blueprint(player, text)
         build_mode = defines.build_mode.forced,
     })
 
-    local wanted = #inventory[1].get_blueprint_entities()
-    local report = { placed = #ghosts, expected = wanted, missing = {} }
+    -- Ghosts are not the answer to the question being asked. A ghost is placed
+    -- for anything the blueprint mentions, whether or not the thing could
+    -- stand there; only reviving one puts a real entity on the ground, and
+    -- that is what "will this place" means. So each ghost is revived, and the
+    -- two ways of failing are reported apart: a prototype the game would not
+    -- even ghost is missing from the game, while one that ghosted and would
+    -- not revive had nowhere to go.
+    local built, refused = 0, {}
+    for _, ghost in pairs(ghosts) do
+        if ghost.valid then
+            if ghost.name == "entity-ghost" then
+                local name = ghost.ghost_name
+                local _, revived = ghost.revive()
+                if revived then
+                    built = built + 1
+                else
+                    refused[name] = (refused[name] or 0) + 1
+                end
+            else
+                built = built + 1
+            end
+        end
+    end
+
+    local entries = inventory[1].get_blueprint_entities()
+    local wanted = #entries
+    local report = {
+        placed = built,
+        expected = wanted,
+        missing = {},
+        refused = refused,
+    }
     if #ghosts < wanted then
-        -- Which prototypes failed is more useful than how many.
+        -- Which prototypes never even became a ghost is more useful than how
+        -- many: that is the mod set disagreeing with the blueprint.
         local seen = {}
-        for _, entry in pairs(inventory[1].get_blueprint_entities()) do
+        for _, entry in pairs(entries) do
             seen[entry.name] = (seen[entry.name] or 0) + 1
         end
         for _, ghost in pairs(ghosts) do
@@ -332,7 +363,11 @@ end)
 
 commands.add_command("forge-clean", { "forge.cmd-clean" }, function(event)
     local player = game.get_player(event.player_index)
+    local speed_restored = circuit.restore_speed()
     local status = scratch.remove()
+    if speed_restored then
+        player.print({ "forge.clean-speed" })
+    end
     if status == "removed" then
         player.print({ "forge.cleaned" })
     elseif status == "occupied" then

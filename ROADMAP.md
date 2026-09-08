@@ -24,7 +24,7 @@ fraction of the effort to use.
 Worth doing only after the commands themselves have settled, since a window
 around a moving target is work done twice.
 
-## Restore the game speed after an interrupted run
+## ~~Restore the game speed after an interrupted run~~ — done in 0.4.0
 
 A circuit run raises the game speed and lowers it again when it finishes. If the
 game is closed in the middle, the speed stays raised in the save: the value to

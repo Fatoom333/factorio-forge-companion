@@ -58,7 +58,13 @@ command rather than a manual selection.
 ### `/forge-verify <blueprint string>`
 
 Pastes a blueprint onto a scratch surface and reports how many entities
-actually placed, and which prototypes did not.
+actually placed, and what failed.
+
+The entities are really built, not ghosted. A ghost appears for anything a
+blueprint mentions whether or not it could stand there, so only building tells
+you what "will this place" means. The two ways of failing are reported apart: a
+prototype that never became a ghost is one this mod set does not have, while
+one that could not be built had nowhere to go.
 
 The strongest check available, because the judge is the game rather than a
 model of it: whatever will not place, does not place here either.
