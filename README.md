@@ -52,8 +52,12 @@ The command remains, and is the form a script would call, or the one to use
 when the area is known but not on screen.
 
 The game builds the blueprint, so the result is exactly what its own export
-button would have given you. This turns "show me your city block" into a
-command rather than a manual selection.
+button would have given you.
+
+Beside it goes `blueprints/<name>-underground.json`: every underground belt and
+pipe in the area with the partner the game itself names. Which end of a run
+pairs with which can only be inferred from outside, and that inference was
+wrong twice before this file existed.
 
 ### `/forge-verify <blueprint string>`
 
@@ -130,7 +134,13 @@ blueprint, record a circuit run, clean up.
 
 The blueprint comes from the cursor rather than from a text field. Pasting
 twenty thousand characters into a box is not something anyone does twice, and
-the blueprint being looked at is already in hand.
+the blueprint being looked at is already in hand. One out of the blueprint
+library counts: that is a record rather than an item, and both are read.
+
+A run long enough to matter is asked about first, with the same figures the
+console gives — the ticks, the game time, the speed — and the order is confirm,
+save, then speed: the autosave is written a tick before the run begins, so it
+holds the state before any of it. Cancel does nothing at all.
 
 The commands remain what a script calls, and the window is only another way to
 reach them.
@@ -178,11 +188,11 @@ the entities off it would not be enough: ground stays in a save once generated,
 and would grow with the largest blueprint ever checked, so the surface goes
 rather than accumulates.
 
-## What is still missing
+## What was on the roadmap
 
-[ROADMAP.md](ROADMAP.md) lists what this owes before 1.0.0: an area selection
-instead of typed coordinates, a small window in place of four console commands,
-and the game speed restored after a run that was interrupted.
+All of it is done: an area dragged instead of coordinates typed, a window in
+place of four console commands, and a game speed that comes back after a run
+was interrupted. [ROADMAP.md](ROADMAP.md) keeps the record and what it cost.
 
 ## Licence
 
