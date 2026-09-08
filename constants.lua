@@ -21,6 +21,12 @@ M.pole = "forge-power-pole"
 M.source = "forge-power-source"
 M.scratch_surface = "forge-scratch"
 
+-- The selection tool and the shortcut that hands it over. `/forge-region`
+-- makes a player know four numbers about a place they are standing in; this
+-- lets them drag a rectangle over it instead.
+M.selector = "forge-region-selector"
+M.selector_shortcut = "forge-give-region-selector"
+
 -- How large the scratch surface is allowed to be. Chunks are only generated
 -- where something is built, so this is a limit rather than a cost, and it is
 -- wider than any blueprint a player can paste.

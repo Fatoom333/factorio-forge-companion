@@ -88,3 +88,49 @@ data:extend({
         picture = empty_sprite,
     },
 })
+
+-- The tool that turns "show me your city block" into dragging a box over it.
+--
+-- Selection mode is the game's own blueprint mode, so the highlight while
+-- dragging shows what will be captured. The area is what matters, though: the
+-- export asks the game to build a blueprint of the rectangle, exactly as the
+-- command does, rather than assembling one from the selected entities.
+data:extend({
+    {
+        type = "selection-tool",
+        name = constants.selector,
+        icon = "__base__/graphics/icons/blueprint.png",
+        icon_size = 64,
+        flags = { "not-stackable", "spawnable", "only-in-cursor" },
+        hidden = true,
+        subgroup = "other",
+        order = "z[forge]-a[region]",
+        stack_size = 1,
+        draw_label_for_cursor_render = true,
+        -- Deliberately not the blueprint's own blue: while dragging, the
+        -- border is the only thing saying which tool is in hand, and mistaking
+        -- this for a blueprint selection would be easy. Amber for a plain
+        -- drag, paler for the alt drag that leaves the tiles behind.
+        select = {
+            border_color = { 255, 170, 40 },
+            mode = { "blueprint" },
+            cursor_box_type = "copy",
+        },
+        alt_select = {
+            border_color = { 255, 215, 140 },
+            mode = { "blueprint" },
+            cursor_box_type = "copy",
+        },
+    },
+    {
+        type = "shortcut",
+        name = constants.selector_shortcut,
+        order = "z[forge]",
+        action = "spawn-item",
+        item_to_spawn = constants.selector,
+        icon = "__base__/graphics/icons/shortcut-toolbar/mip/new-blueprint-x56.png",
+        icon_size = 56,
+        small_icon = "__base__/graphics/icons/shortcut-toolbar/mip/new-blueprint-x24.png",
+        small_icon_size = 24,
+    },
+})

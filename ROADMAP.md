@@ -4,7 +4,7 @@ What this mod still owes, kept here rather than in a conversation.
 
 [Русская версия](ROADMAP.ru.md)
 
-## Select an area instead of typing its corners
+## ~~Select an area instead of typing its corners~~ — done in 0.3.0
 
 `/forge-region -100 -100 100 100 cityblock` asks the player to know four
 numbers about a place they are standing in. A selection tool — the kind
