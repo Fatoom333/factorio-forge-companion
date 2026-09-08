@@ -416,6 +416,9 @@ gui.actions = {
     circuit = function(player, text, ticks)
         circuit.start(player, text, ticks)
     end,
+    circuit_soon = function(player, text, ticks)
+        circuit.start_next_tick(player, text, ticks)
+    end,
     clean = function(player)
         local aborted = circuit.abort()
         if aborted then

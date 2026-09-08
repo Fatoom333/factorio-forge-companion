@@ -296,6 +296,60 @@ function M.refresh(player)
     end
 end
 
+local CONFIRM = "forge-confirm"
+
+--- Ask before a run long enough to matter, and say what it will cost.
+---
+--- The console path has said this from the start; the window went straight to
+--- the running, which made the same mistake cheaper to make from the place
+--- that is easier to use.
+function M.ask_to_run(player, text, ticks)
+    if player.gui.screen[CONFIRM] then
+        player.gui.screen[CONFIRM].destroy()
+    end
+
+    local dialog = player.gui.screen.add({
+        type = "frame",
+        name = CONFIRM,
+        direction = "vertical",
+        caption = { "forge.confirm-title" },
+    })
+    dialog.auto_center = true
+    dialog.tags = { text = text, ticks = ticks }
+
+    local body = dialog.add({
+        type = "frame",
+        style = "inside_shallow_frame_with_padding",
+        direction = "vertical",
+    })
+    body.add({
+        type = "label",
+        caption = {
+            "forge.confirm-cost",
+            ticks,
+            string.format("%.1f", ticks / constants.ticks_per_second),
+            settings.global["forge-circuit-speed"].value,
+        },
+    })
+    body.add({ type = "label", caption = { "forge.confirm-autosave" } })
+
+    local buttons = dialog.add({ type = "flow", direction = "horizontal" })
+    buttons.add({
+        type = "button",
+        name = "forge-confirm-cancel",
+        caption = { "forge.confirm-cancel" },
+        style = "back_button",
+    })
+    local filler = buttons.add({ type = "empty-widget" })
+    filler.style.horizontally_stretchable = true
+    buttons.add({
+        type = "button",
+        name = "forge-confirm-go",
+        caption = { "forge.confirm-go" },
+        style = "confirm_button",
+    })
+end
+
 function M.toggle(player)
     if container(player)[NAME] then
         M.close(player)
@@ -314,7 +368,19 @@ function M.on_click(event)
     -- does.
     M.refresh(player)
 
-    if name == BUTTON then
+    if name == "forge-confirm-cancel" then
+        player.gui.screen[CONFIRM].destroy()
+        status(player, { "forge.confirm-cancelled" })
+    elseif name == "forge-confirm-go" then
+        local dialog = player.gui.screen[CONFIRM]
+        local tags = dialog.tags
+        dialog.destroy()
+        -- The save first, the run a tick later, so the save is of the state
+        -- before any of it.
+        game.auto_save(constants.autosave_name)
+        M.actions.circuit_soon(player, tags.text, tags.ticks)
+        status(player, { "forge.confirm-started" })
+    elseif name == BUTTON then
         M.toggle(player)
     elseif name == "forge-close" then
         M.close(player)
@@ -340,6 +406,10 @@ function M.on_click(event)
             local ticks = tonumber(field and field.text or "") or 0
             if ticks < 1 then
                 status(player, { "forge.window-ticks-needed" })
+                return
+            end
+            if ticks > constants.confirm_above_ticks then
+                M.ask_to_run(player, text, ticks)
                 return
             end
             M.actions.circuit(player, text, ticks)

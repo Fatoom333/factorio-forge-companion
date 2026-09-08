@@ -270,6 +270,31 @@ function M.on_tick()
 end
 
 --- Restore the tick handler after a save is loaded mid-run.
+--- Ask for a run to begin on the next tick rather than this one.
+---
+--- The autosave that precedes a long run is written at the end of the tick it
+--- was asked for. Starting in that same tick would put the running circuit and
+--- the raised speed into the very save meant to be the state before them, so
+--- the start waits a tick.
+function M.start_next_tick(player, text, ticks)
+    storage.pending_start = { player = player.index, text = text, ticks = ticks }
+    script.on_event(defines.events.on_tick, M.begin_pending)
+end
+
+--- The other half of the above: run once, then get out of the way.
+function M.begin_pending()
+    local pending = storage.pending_start
+    storage.pending_start = nil
+    script.on_event(defines.events.on_tick, nil)
+    if pending == nil then
+        return
+    end
+    local player = game.get_player(pending.player)
+    if player then
+        M.start(player, pending.text, pending.ticks)
+    end
+end
+
 --- Stop a run in its tracks, keeping nothing.
 ---
 --- There was no way to do this, and a five minute recording asked for by
@@ -316,7 +341,9 @@ local function recover_speed()
 end
 
 function M.on_load()
-    if storage.run then
+    if storage.pending_start then
+        script.on_event(defines.events.on_tick, M.begin_pending)
+    elseif storage.run then
         script.on_event(defines.events.on_tick, M.on_tick)
     elseif storage.speed then
         -- Raised for a run that is no longer there: put it back and stop.
