@@ -10,6 +10,7 @@
 
 local circuit = require("circuit")
 local constants = require("constants")
+local gui = require("gui")
 local scratch = require("scratch")
 
 local OUTPUT = "factorio-forge/"
@@ -403,6 +404,61 @@ end)
 
 script.on_event(defines.events.on_player_alt_selected_area, function(event)
     on_selection(event, false)
+end)
+
+--- The window's buttons, bound to the same work the commands do.
+---
+--- Bound here rather than inside the window because this file owns the
+--- actions; the window owns only how they are reached.
+gui.actions = {
+    export = export_environment,
+    verify = verify_blueprint,
+    circuit = function(player, text, ticks)
+        circuit.start(player, text, ticks)
+    end,
+    clean = function(player)
+        local aborted = circuit.abort()
+        if aborted then
+            player.print({ "forge.run-aborted", aborted })
+        end
+        if circuit.restore_speed() then
+            player.print({ "forge.clean-speed" })
+        end
+        local status = scratch.remove()
+        if status == "removed" then
+            player.print({ "forge.cleaned" })
+        elseif status == "occupied" then
+            player.print({ "forge.clean-occupied" })
+        else
+            player.print({ "forge.clean-absent" })
+        end
+    end,
+    selector = function(player)
+        player.clear_cursor()
+        player.cursor_stack.set_stack({ name = constants.selector })
+    end,
+}
+
+script.on_event(defines.events.on_gui_click, gui.on_click)
+
+-- The button has to exist for players who were already here when the mod
+-- arrived, not only for ones who join afterwards.
+local function give_everyone_the_button()
+    for _, player in pairs(game.players) do
+        gui.ensure_button(player)
+    end
+end
+
+script.on_init(give_everyone_the_button)
+script.on_configuration_changed(give_everyone_the_button)
+script.on_event(defines.events.on_player_created, function(event)
+    gui.ensure_button(game.get_player(event.player_index))
+end)
+
+-- The window says whether a blueprint is in hand, so it has to hear about the
+-- cursor changing rather than showing a stale answer.
+script.on_event(defines.events.on_player_cursor_stack_changed, function(event)
+    gui.refresh(game.get_player(event.player_index))
 end)
 
 script.on_load(circuit.on_load)

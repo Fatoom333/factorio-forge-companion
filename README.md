@@ -122,6 +122,19 @@ The two commands above delete it themselves when they finish, so this is only
 needed if something was interrupted — a save taken in the middle of a circuit
 run, say. It refuses while you are standing on the surface.
 
+## The window
+
+A button at the top left, in the row mods share, opens a small window with the
+same work in it: export the environment, take the region selector, verify a
+blueprint, record a circuit run, clean up.
+
+The blueprint comes from the cursor rather than from a text field. Pasting
+twenty thousand characters into a box is not something anyone does twice, and
+the blueprint being looked at is already in hand.
+
+The commands remain what a script calls, and the window is only another way to
+reach them.
+
 ## Building
 
 ```powershell
