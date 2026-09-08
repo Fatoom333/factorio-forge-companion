@@ -229,6 +229,13 @@ local function confirmed(player, parameter, ticks)
     end
 
     storage.pending_run = { parameter = parameter, at = game.tick }
+
+    -- Written now, on the warning rather than on the confirmation, so that the
+    -- saved state is the one before any of this: no scratch surface, no
+    -- circuit built, normal speed. A save taken at the start of the run would
+    -- restore into the middle of it.
+    game.auto_save(constants.autosave_name)
+
     player.print({
         "forge.circuit-cost",
         ticks,
