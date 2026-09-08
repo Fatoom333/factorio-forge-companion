@@ -24,6 +24,7 @@ New-Item -ItemType Directory -Force -Path $dist | Out-Null
 $contents = @(
     "info.json",
     "control.lua",
+    "data.lua",
     "circuit.lua",
     "scratch.lua",
     "LICENSE",

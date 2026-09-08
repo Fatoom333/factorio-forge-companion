@@ -17,17 +17,23 @@ local M = {}
 
 local OUTPUT = "factorio-forge/"
 
--- Combinators keep their input and output on separate connectors; everything
--- else has one pair. Reading all of them and keeping whichever exist avoids
--- having to know which kind of entity this is.
-local CONNECTORS = {
-    { id = defines.wire_connector_id.circuit_red, label = "red" },
-    { id = defines.wire_connector_id.circuit_green, label = "green" },
-    { id = defines.wire_connector_id.combinator_input_red, label = "input-red" },
-    { id = defines.wire_connector_id.combinator_input_green, label = "input-green" },
-    { id = defines.wire_connector_id.combinator_output_red, label = "output-red" },
-    { id = defines.wire_connector_id.combinator_output_green, label = "output-green" },
-}
+-- Every circuit connector the engine knows of, taken from its own list rather
+-- than written out here. Combinators keep input and output on separate
+-- connectors while everything else has one pair, and a modded entity -- or a
+-- future version of the game -- can use connectors this file never heard of.
+-- The engine's enum is the only complete answer, so it is the one used.
+--
+-- Copper connectors carry power rather than signals and are left out by the
+-- colour test.
+local CONNECTORS = (function()
+    local out = {}
+    for name, id in pairs(defines.wire_connector_id) do
+        if string.find(name, "red", 1, true) or string.find(name, "green", 1, true) then
+            out[#out + 1] = { id = id, label = (string.gsub(name, "_", "-")) }
+        end
+    end
+    return out
+end)()
 
 --- Every signal on one network, as a plain name to count mapping.
 local function read_network(network)
