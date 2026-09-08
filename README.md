@@ -146,6 +146,12 @@ the entities off it would not be enough: ground stays in a save once generated,
 and would grow with the largest blueprint ever checked, so the surface goes
 rather than accumulates.
 
+## What is still missing
+
+[ROADMAP.md](ROADMAP.md) lists what this owes before 1.0.0: an area selection
+instead of typed coordinates, a small window in place of four console commands,
+and the game speed restored after a run that was interrupted.
+
 ## Licence
 
 MIT. Factorio is a trademark of Wube Software; this is an unofficial community
