@@ -72,23 +72,24 @@ The game is sped up while a run is in progress and returned to normal
 afterwards. A five minute timer is eighteen thousand ticks, and waiting five
 real minutes for it would be absurd.
 
-## Installing
+## Building
 
 ```powershell
-.\tools\install.ps1
+.\tools\build.ps1
 ```
 
-Copies the mod into Factorio's `mods` folder and switches it on. Run it again
-after any change — nothing picks edits up on its own. Set `FACTORIO_USER_DIR`
-if your Factorio user directory is somewhere unusual.
+Produces `dist/factorio-forge-companion_<version>.zip`. Copy that into your
+Factorio `mods` folder and enable it in the in-game mod list.
 
-Then restart Factorio, or reload the save.
+The script only builds; it does not install. It wraps the files in the folder
+Factorio expects inside the archive — `<name>_<version>/` with `info.json` at
+its root — which is the usual reason a hand-made mod zip refuses to load.
 
-> A directory junction would be tidier, since the game would read the working
-> copy directly, and that is the advice you will find elsewhere. It did not work
-> here: a junction pointing at another drive listed its entries but every file
-> inside failed to open, so the game would have found the mod and been unable to
-> read a line of it. Copying is dull and works.
+> If you are developing on it, a directory junction from the mods folder to the
+> working copy is the tidy approach and worth trying. It did not work on the
+> machine this was written on: a junction pointing at another drive listed its
+> entries but every file inside failed to open, so the game found the mod and
+> could not read a line of it. Rebuilding the zip works regardless.
 
 ## A note on scope
 
