@@ -461,4 +461,13 @@ script.on_event(defines.events.on_player_cursor_stack_changed, function(event)
     gui.refresh(game.get_player(event.player_index))
 end)
 
+-- Picking a blueprint out of the library does not always raise the cursor
+-- event, so the window looks for itself twice a second rather than trusting
+-- one to arrive.
+script.on_nth_tick(30, function()
+    for _, player in pairs(game.connected_players) do
+        gui.refresh(player)
+    end
+end)
+
 script.on_load(circuit.on_load)
