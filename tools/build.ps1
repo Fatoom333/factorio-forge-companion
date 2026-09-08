@@ -26,6 +26,7 @@ $contents = @(
     "control.lua",
     "data.lua",
     "circuit.lua",
+    "constants.lua",
     "scratch.lua",
     "LICENSE",
     "locale/en/strings.cfg",
