@@ -70,6 +70,36 @@ local function recharge(entities)
     end
 end
 
+--- What the game itself says about each entity at the start of a run.
+---
+--- A recording full of empty frames has several possible causes -- no power,
+--- no wires, an entity that cannot operate at all -- and an empty recording
+--- cannot tell them apart. `status` is the game's own answer, by name, so the
+--- reason lands in the file instead of being guessed at from outside.
+local function diagnose(entities)
+    local status_names = {}
+    for name, value in pairs(defines.entity_status) do
+        status_names[value] = name
+    end
+
+    local out = {}
+    for _, entity in pairs(entities) do
+        if entity.valid then
+            local source = entity.prototype.electric_energy_source_prototype
+            out[#out + 1] = {
+                name = entity.name,
+                position = { x = entity.position.x, y = entity.position.y },
+                status = entity.status and status_names[entity.status] or "no status",
+                has_electric_source = source ~= nil,
+                buffer_capacity = source and source.buffer_capacity or 0,
+                energy = entity.energy,
+                electric_network = entity.electric_network_id or "none",
+            }
+        end
+    end
+    return out
+end
+
 --- One sample of everything wired, keyed by where it is.
 local function sample(entities)
     local frame = {}
@@ -154,6 +184,7 @@ function M.start(player, text, ticks)
     storage.run = {
         player = player.index,
         entities = entities,
+        diagnostics = diagnose(entities),
         remaining = ticks,
         total = ticks,
         started_tick = game.tick,
@@ -197,6 +228,7 @@ function M.on_tick()
         exported_by = "factorio-forge-companion",
         ticks = run.total,
         entities = #run.entities,
+        diagnostics = run.diagnostics,
         note = "One frame per tick. Combinators take a tick to act, so a frame "
             .. "shows the state after that tick has been simulated.",
         frames = run.frames,
