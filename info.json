@@ -1,0 +1,10 @@
+{
+  "name": "factorio-forge-companion",
+  "version": "0.1.0",
+  "title": "Factorio Forge Companion",
+  "author": "Fatoom333",
+  "homepage": "https://github.com/Fatoom333/factorio-forge-companion",
+  "description": "Exports the things about a save that can only be known from inside the game: the exact mod set and its startup settings, what has been researched, regions of the base as blueprint strings, and how a circuit actually behaves tick by tick. Companion to factorio-forge, and useful on its own.",
+  "factorio_version": "2.0",
+  "dependencies": ["base >= 2.0.0"]
+}

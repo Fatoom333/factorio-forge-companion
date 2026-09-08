@@ -1,0 +1,9 @@
+# Anything the mod writes belongs to the player's game, not to this repository.
+script-output/
+*.zip
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
