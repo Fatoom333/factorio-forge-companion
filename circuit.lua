@@ -37,9 +37,6 @@ end)()
 
 --- Every signal on one network, as a plain name to count mapping.
 local function read_network(network)
-    if not network then
-        return nil
-    end
     local signals = {}
     for _, entry in pairs(network.signals or {}) do
         -- Quality makes two signals of one name distinct, so it is kept.
@@ -49,10 +46,65 @@ local function read_network(network)
         end
         signals[key] = entry.count
     end
-    return { id = network.network_id, signals = signals }
+    return signals
 end
 
---- What the game itself says about each entity at the start of a run.
+--- How an entity is named in the recording: where it is, and what it is.
+---
+--- One decimal, not an integer: an entity with an odd footprint sits on a half
+--- tile, and rounding two neighbours to the same whole number would silently
+--- merge them into one.
+local function key_of(entity)
+    return string.format("%.1f,%.1f %s", entity.position.x, entity.position.y, entity.name)
+end
+
+--- Which connector of which entity sits on which network.
+---
+--- Recorded once, because it does not change while a run lasts. Signals live
+--- in a network rather than in an entity -- a wire is shared -- so recording
+--- them per entity per connector wrote the same values several times over. The
+--- wiring is the part that is per entity, and it is written down here; the
+--- frames then carry only the networks.
+local function wiring(entities)
+    local out = {}
+    for _, entity in pairs(entities) do
+        if entity.valid then
+            local connectors, any = {}, false
+            for _, connector in pairs(CONNECTORS) do
+                local ok, network = pcall(entity.get_circuit_network, connector.id)
+                if ok and network then
+                    connectors[connector.label] = network.network_id
+                    any = true
+                end
+            end
+            if any then
+                out[key_of(entity)] = connectors
+            end
+        end
+    end
+    return out
+end
+
+--- One sample: every network the run touches, once each.
+local function sample(entities)
+    local frame = {}
+    for _, entity in pairs(entities) do
+        if entity.valid then
+            for _, connector in pairs(CONNECTORS) do
+                local ok, network = pcall(entity.get_circuit_network, connector.id)
+                if ok and network then
+                    local id = tostring(network.network_id)
+                    if frame[id] == nil then
+                        frame[id] = read_network(network)
+                    end
+                end
+            end
+        end
+    end
+    return frame
+end
+
+--- What the game itself says about each entity.
 ---
 --- A recording full of empty frames has several possible causes -- no power,
 --- no wires, an entity that cannot operate at all -- and an empty recording
@@ -169,7 +221,7 @@ function M.start(player, text, ticks)
         player = player.index,
         entities = entities,
         power = power,
-        diagnostics = diagnose(entities),
+        wiring = wiring(entities),
         remaining = ticks,
         total = ticks,
         started_tick = game.tick,
@@ -194,7 +246,7 @@ function M.on_tick()
 
     run.frames[#run.frames + 1] = {
         tick = game.tick - run.started_tick,
-        entities = sample(run.entities),
+        networks = sample(run.entities),
     }
     run.remaining = run.remaining - 1
 
@@ -212,9 +264,17 @@ function M.on_tick()
         ticks = run.total,
         entities = #run.entities,
         power = run.power,
-        diagnostics = run.diagnostics,
-        note = "One frame per tick. Combinators take a tick to act, so a frame "
-            .. "shows the state after that tick has been simulated.",
+        wiring = run.wiring,
+        -- Taken now rather than at the start. An entity built this tick has
+        -- not been through an electric network update yet and reports
+        -- `no_power` however well powered it is about to be, which is a
+        -- reading that misleads rather than informs.
+        diagnostics = diagnose(run.entities),
+        note = "One frame per tick, each holding every circuit network by id. "
+            .. "`wiring` says which connector of which entity is on which "
+            .. "network; signals live in the network, not in the entity. "
+            .. "Combinators take a tick to act, so a frame shows the state "
+            .. "after that tick has been simulated.",
         frames = run.frames,
     }), false)
     storage.run = nil
