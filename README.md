@@ -72,6 +72,12 @@ The game is sped up while a run is in progress and returned to normal
 afterwards. A five minute timer is eighteen thousand ticks, and waiting five
 real minutes for it would be absurd.
 
+Every entity is held at full charge for the duration. Combinators are
+electrical devices, and an unpowered one does not compute, so a run on a
+surface with no power network would otherwise record the right number of frames
+with nothing happening in them. This is deliberate: the recording answers what
+the logic does, not whether your power holds up.
+
 ### `/forge-clean`
 
 Deletes the scratch surface, in case a run left one behind.
