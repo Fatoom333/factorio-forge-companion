@@ -85,18 +85,27 @@ function M.prepare(surface, entities, origin)
     }
 end
 
---- The most generous electric pole this game has.
+--- The most generous electric pole available.
 ---
---- Found by looking rather than by name. Mods change these numbers and add
---- their own poles: Krastorio widens the substation's supply area from 9 to 10
---- and adds one at 12, so a hardcoded "substation" would both miss the better
---- pole and assume the wrong size for the one it picked.
+--- The mod's own pole normally wins, since it is defined with the largest
+--- supply area the engine allows. The search is still a search, because that
+--- pole is only defined if there was an existing one to copy, and because a
+--- mod may have something better: Krastorio widens the substation's supply
+--- area from 9 to 10 and adds one at 12, so a hardcoded name would pick a
+--- worse pole and assume the wrong size for it.
+---
+--- The type is checked before the supply area is read. A prototype in 2.0
+--- raises on a key that does not belong to its type rather than returning nil,
+--- so reading `supply_area_distance` from whatever comes back is an error, not
+--- a nil to fall back from.
 local function best_pole()
     local best
-    for _, proto in pairs(prototypes.get_entity_filtered({ { filter = "type", type = "electric-pole" } })) do
-        local supply = proto.supply_area_distance or 0
-        if supply > 0 and (best == nil or supply > best.supply_area_distance) then
-            best = proto
+    for _, proto in pairs(prototypes.entity) do
+        if proto.type == "electric-pole" then
+            local supply = proto.supply_area_distance or 0
+            if supply > 0 and (best == nil or supply > best.supply_area_distance) then
+                best = proto
+            end
         end
     end
     return best
@@ -163,9 +172,14 @@ function M.power(surface, force, box)
         return report
     end
 
-    local source_name = "electric-energy-interface"
+    -- The mod's own source first, the game's own as the fallback if this mod's
+    -- data stage found nothing to copy.
+    local source_name = "forge-power-source"
     if prototypes.entity[source_name] == nil then
-        report.note = "this game has no electric-energy-interface"
+        source_name = "electric-energy-interface"
+    end
+    if prototypes.entity[source_name] == nil then
+        report.note = "this game has no energy source to place"
         return report
     end
 

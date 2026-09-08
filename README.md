@@ -107,10 +107,18 @@ its root — which is the usual reason a hand-made mod zip refuses to load.
 
 ## A note on scope
 
-This mod only reads and writes files. It adds no prototypes, changes no
-recipes, and touches nothing in your world — `/forge-verify` and
-`/forge-circuit` work on a separate scratch surface created for the purpose,
-never on the surface you are playing on.
+This mod only reads and writes files. It changes no recipes and touches
+nothing in your world — `/forge-verify` and `/forge-circuit` work on a separate
+scratch surface created for the purpose, never on the surface you are playing
+on.
+
+It does define two prototypes, and both exist only to power that scratch
+surface: an electric pole with the largest supply area the engine allows, and
+an energy source to feed it. Combinators have no energy buffer and draw from a
+network every tick, so a circuit on no network computes nothing; powering it
+with the game's own poles would mean threading a grid of them between the
+blueprint's own entities, which fails exactly when the blueprint is dense.
+Neither prototype has an item, so neither can be built, mined or held.
 
 That surface is deleted again as soon as the command has its answer. Clearing
 the entities off it would not be enough: ground stays in a save once generated,
