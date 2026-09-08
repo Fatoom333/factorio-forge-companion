@@ -43,7 +43,24 @@ function M.ensure_button(player)
 end
 
 --- The blueprint the player is holding, as a string, or nil.
+---
+--- Two places to look, not one. A blueprint taken out of the inventory is an
+--- item in the cursor; one taken out of the library is a record, which lives
+--- in `cursor_record` and is not an item at all. Checking only the stack made
+--- the window insist there was nothing in hand while a blueprint was plainly
+--- being held -- the library is where most blueprints are kept.
 function M.blueprint_in_hand(player)
+    local record = player.cursor_record
+    if record ~= nil and record.valid and record.type == "blueprint" then
+        local ok, text = pcall(function()
+            return record.export_stack()
+        end)
+        if ok and text ~= "" then
+            return text
+        end
+        return nil
+    end
+
     local stack = player.cursor_stack
     if stack == nil or not stack.valid_for_read then
         return nil
@@ -184,6 +201,11 @@ end
 function M.on_click(event)
     local player = game.get_player(event.player_index)
     local name = event.element.name
+
+    -- Refreshed on every click as well as on the cursor event, since a record
+    -- picked from the library does not always announce itself the way an item
+    -- does.
+    M.refresh(player)
 
     if name == BUTTON then
         M.toggle(player)
