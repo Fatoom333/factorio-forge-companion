@@ -18,6 +18,8 @@
 --- the blueprint is packed. With an empty sprite it is invisible as well, so
 --- it neither takes space nor shows up in what is being looked at.
 
+local constants = require("constants")
+
 local empty_sprite = {
     filename = "__core__/graphics/empty.png",
     priority = "extra-high",
@@ -56,10 +58,8 @@ data:extend({
         collision_box = { { -0.05, -0.05 }, { 0.05, 0.05 } },
         collision_mask = { layers = {} },
         selection_box = { { 0, 0 }, { 0, 0 } },
-        -- 64 is the largest supply area the engine accepts: one pole reaches
-        -- 128 tiles across, which is most circuits in a single placement.
-        supply_area_distance = 64,
-        maximum_wire_distance = 64,
+        supply_area_distance = constants.pole_supply,
+        maximum_wire_distance = constants.pole_wire,
         draw_copper_wires = false,
         draw_circuit_wires = false,
         pictures = invisible_pole_picture,

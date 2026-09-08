@@ -7,6 +7,8 @@
 --- without trouble. So generating the ground first is not a refinement here,
 --- it is the difference between working and not.
 
+local constants = require("constants")
+
 local M = {}
 
 local NAME = "forge-scratch"
@@ -25,6 +27,20 @@ function M.surface()
         surface.freeze_daytime = true
     end
     return surface
+end
+
+--- What the game says an entity is doing, by name rather than by number.
+function M.status_name(entity)
+    local status = entity.status
+    if status == nil then
+        return "no status"
+    end
+    for name, value in pairs(defines.entity_status) do
+        if value == status then
+            return name
+        end
+    end
+    return tostring(status)
 end
 
 --- Empty it, so one run cannot see what the previous run left behind.
@@ -147,12 +163,12 @@ function M.power(surface, force, box)
     end
 
     -- Coverage wants the poles no further apart than the area they supply;
-    -- staying connected wants them within reach of each other's wires. Both
-    -- numbers are read from the prototype rather than repeated here, so
-    -- data.lua stays the one place they are written down.
-    local supply = M.number_key(pole, "supply_area_distance") or 0
-    local wire = M.number_key(pole, "max_wire_distance") or 0
-    local step = math.max(math.min(supply * 2, wire), 1)
+    -- staying connected wants them within reach of each other's wires. The
+    -- numbers come from constants.lua, which is also what defined the pole:
+    -- asking the prototype returned nothing and collapsed the spacing to a
+    -- single tile.
+    local supply = constants.pole_supply
+    local step = math.max(math.min(supply * 2, constants.pole_wire), 1)
 
     local placed, anchor = 0, nil
     local x = box.min_x
@@ -193,10 +209,19 @@ function M.power(surface, force, box)
         return report
     end
 
-    -- Production is not set here: the prototype in data.lua declares it, and
-    -- the entity is created producing exactly that. Asking the prototype what
-    -- it is capable of was both unnecessary and a key it does not answer for.
+    -- The prototype declares a production, but a run whose network existed
+    -- and carried nothing says that is not enough on its own, so the entity is
+    -- told directly. Whether that took, and what the game makes of the source
+    -- afterwards, both go into the report: a network with no power in it
+    -- should say so rather than show up as a circuit that did nothing.
+    local assigned = pcall(function()
+        source.power_production = constants.source_production
+    end)
+
     report.source = source.name
+    report.production_assigned = assigned
+    report.source_status = M.status_name(source)
+    report.source_network = source.electric_network_id or "none"
     return report
 end
 

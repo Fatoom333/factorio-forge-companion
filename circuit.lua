@@ -59,11 +59,6 @@ end
 --- cannot tell them apart. `status` is the game's own answer, by name, so the
 --- reason lands in the file instead of being guessed at from outside.
 local function diagnose(entities)
-    local status_names = {}
-    for name, value in pairs(defines.entity_status) do
-        status_names[value] = name
-    end
-
     local out = {}
     for _, entity in pairs(entities) do
         if entity.valid then
@@ -77,7 +72,7 @@ local function diagnose(entities)
             out[#out + 1] = {
                 name = entity.name,
                 position = { x = entity.position.x, y = entity.position.y },
-                status = entity.status and status_names[entity.status] or "no status",
+                status = scratch.status_name(entity),
                 has_electric_source = source ~= nil,
                 buffer_capacity = source and (scratch.number_key(source, "buffer_capacity") or 0) or 0,
                 energy = scratch.number_key(entity, "energy") or 0,
