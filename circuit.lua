@@ -67,14 +67,20 @@ local function diagnose(entities)
     local out = {}
     for _, entity in pairs(entities) do
         if entity.valid then
-            local source = entity.prototype.electric_energy_source_prototype
+            -- Guarded like every other prototype read: these entities come
+            -- from the player's blueprint, so what they answer for is not
+            -- ours to assume, and 2.0 raises rather than returning nil.
+            local ok, source = pcall(function()
+                return entity.prototype.electric_energy_source_prototype
+            end)
+            source = ok and source or nil
             out[#out + 1] = {
                 name = entity.name,
                 position = { x = entity.position.x, y = entity.position.y },
                 status = entity.status and status_names[entity.status] or "no status",
                 has_electric_source = source ~= nil,
-                buffer_capacity = source and source.buffer_capacity or 0,
-                energy = entity.energy,
+                buffer_capacity = source and (scratch.number_key(source, "buffer_capacity") or 0) or 0,
+                energy = scratch.number_key(entity, "energy") or 0,
                 electric_network = entity.electric_network_id or "none",
             }
         end
