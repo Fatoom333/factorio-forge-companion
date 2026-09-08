@@ -46,30 +46,6 @@ local function read_network(network)
     return { id = network.network_id, signals = signals }
 end
 
---- Fill the energy buffer of everything that needs one.
----
---- Combinators are electrical devices -- one kilowatt each -- and an unpowered
---- combinator does not compute at all. The scratch surface carries no power
---- network, so without this a run records the right number of frames with
---- nothing whatsoever happening in them, which is exactly what the first
---- version produced: a counter that never counted.
----
---- The buffer is filled directly rather than by building a power network,
---- which would mean poles and an energy source laid out among the blueprint's
---- own entities, colliding with them and appearing in the recording. Holding
---- everything at full charge is deliberate: the recording answers what the
---- logic does, not whether the player's power holds up.
-local function recharge(entities)
-    for _, entity in pairs(entities) do
-        if entity.valid then
-            local source = entity.prototype.electric_energy_source_prototype
-            if source then
-                entity.energy = source.buffer_capacity
-            end
-        end
-    end
-end
-
 --- What the game itself says about each entity at the start of a run.
 ---
 --- A recording full of empty frames has several possible causes -- no power,
@@ -145,10 +121,10 @@ function M.start(player, text, ticks)
     -- Ungenerated chunks are ground that does not exist yet, and building on
     -- them places nothing at all.
     local origin = { x = 0, y = 0 }
-    scratch.prepare(surface, inventory[1].get_blueprint_entities(), origin)
+    local box = scratch.prepare(surface, inventory[1].get_blueprint_entities(), origin)
 
     -- Built rather than ghosted: a ghost has no circuit network and nothing to
-    -- read. Power comes from `recharge` below rather than from a network.
+    -- read.
     local built = inventory[1].build_blueprint({
         surface = surface,
         force = player.force,
@@ -177,13 +153,15 @@ function M.start(player, text, ticks)
         return
     end
 
-    -- Charged before the first tick, so the run starts in the state the rest
-    -- of it will be in rather than idling until the first top-up.
-    recharge(entities)
+    -- After the blueprint, so a pole can only take a tile the blueprint did
+    -- not want. Without this the combinators stand unpowered and the recording
+    -- is the right number of frames of nothing happening.
+    local power = scratch.power(surface, player.force, box)
 
     storage.run = {
         player = player.index,
         entities = entities,
+        power = power,
         diagnostics = diagnose(entities),
         remaining = ticks,
         total = ticks,
@@ -207,8 +185,6 @@ function M.on_tick()
         return
     end
 
-    recharge(run.entities)
-
     run.frames[#run.frames + 1] = {
         tick = game.tick - run.started_tick,
         entities = sample(run.entities),
@@ -228,6 +204,7 @@ function M.on_tick()
         exported_by = "factorio-forge-companion",
         ticks = run.total,
         entities = #run.entities,
+        power = run.power,
         diagnostics = run.diagnostics,
         note = "One frame per tick. Combinators take a tick to act, so a frame "
             .. "shows the state after that tick has been simulated.",
