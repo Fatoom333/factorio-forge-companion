@@ -57,8 +57,11 @@ model of it: whatever will not place, does not place here either.
 ### `/forge-circuit <ticks> <blueprint string>`
 
 Builds a circuit on the scratch surface, runs it for the given number of ticks,
-and records every circuit network on every wired entity, one frame per tick, to
-`circuit-run.json`.
+and records every circuit network, one frame per tick, to `circuit-run.json`.
+
+Signals live in a network rather than in an entity — a wire is shared — so the
+wiring is written down once, saying which connector of which entity sits on
+which network, and the frames then carry only the networks themselves.
 
 Combinator behaviour lives in the engine rather than in the game's data, so
 anything outside can only model it — and a model is a guess until something
