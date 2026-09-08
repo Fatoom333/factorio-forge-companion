@@ -89,6 +89,31 @@ end
 --- This is what makes "show me your city block" a button press rather than a
 --- manual selection, and it is exact: the game builds the blueprint, so the
 --- result is what the game would have given you.
+--- Gather entities out of whatever shape `neighbours` came back as.
+---
+--- It is not one shape. An underground belt hands back the single entity it
+--- pairs with; a pipe hands back a list per fluid connection, so a list of
+--- lists; and either can hand back nothing. Walking it as a plain table is
+--- what made the first attempt at this crash: the belt's answer is a
+--- LuaEntity, which is userdata rather than a table.
+local function collect_entities(value, out)
+    if value == nil then
+        return out
+    end
+    if type(value) == "table" then
+        for _, item in pairs(value) do
+            collect_entities(item, out)
+        end
+    elseif type(value) == "userdata" and value.valid then
+        out[#out + 1] = {
+            name = value.name,
+            x = value.position.x,
+            y = value.position.y,
+        }
+    end
+    return out
+end
+
 --- What the game itself says about the underground runs inside an area.
 ---
 --- An underground belt or pipe knows its own partner, and the game will say
@@ -107,16 +132,7 @@ local function export_underground_pairs(player, area, name)
         type = { "underground-belt", "pipe-to-ground" },
     })) do
         local partners = {}
-        for _, neighbour in pairs(entity.neighbours or {}) do
-            -- Pipes hand back a flat list; belts hand back the one partner.
-            if neighbour.position then
-                partners[#partners + 1] = {
-                    name = neighbour.name,
-                    x = neighbour.position.x,
-                    y = neighbour.position.y,
-                }
-            end
-        end
+        collect_entities(entity.neighbours, partners)
         runs[#runs + 1] = {
             name = entity.name,
             type = entity.type,
