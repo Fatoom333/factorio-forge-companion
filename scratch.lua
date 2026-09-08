@@ -103,33 +103,13 @@ local function number_key(prototype, key)
     return nil
 end
 
---- The most generous electric pole available.
----
---- The mod's own pole is the answer whenever it exists, and it is defined with
---- the largest supply area the engine allows, so nothing found by searching
---- can beat it. The search below is the fallback for the case where the data
---- stage had no pole to copy.
----
----@return LuaEntityPrototype|nil, table skipped prototypes, by name
-local function best_pole()
-    local own = prototypes.entity["forge-power-pole"]
-    if own ~= nil then
-        return own, {}
-    end
-
-    local best, best_supply, skipped = nil, 0, {}
-    for name, proto in pairs(prototypes.entity) do
-        if proto.type == "electric-pole" then
-            local supply = number_key(proto, "supply_area_distance")
-            if supply == nil then
-                skipped[#skipped + 1] = name
-            elseif supply > best_supply then
-                best, best_supply = proto, supply
-            end
-        end
-    end
-    return best, skipped
-end
+--- The mod's own prototypes, defined in data.lua. Nothing else is consulted:
+--- the game's poles vary in size between mods, cannot be counted on to answer
+--- for their own supply area, and have to be threaded between the blueprint's
+--- entities. Ours collides with nothing and is invisible, so it goes wherever
+--- it is needed and covers whatever is there.
+local POLE = "forge-power-pole"
+local SOURCE = "forge-power-source"
 
 --- Place one entity at a position, or as near to it as there is room.
 local function place_near(surface, force, name, position, limit)
@@ -161,14 +141,15 @@ end
 ---
 ---@return table what was laid down, for the run's diagnostics
 function M.power(surface, force, box)
-    local pole, skipped = best_pole()
+    local pole = prototypes.entity[POLE]
     if pole == nil then
-        return { poles = 0, note = "this game has no electric pole to place" }
+        return { poles = 0, note = "the mod's own pole prototype is missing" }
     end
 
     -- Coverage wants the poles no further apart than the area they supply;
     -- staying connected wants them within reach of each other's wires. Both
-    -- numbers come from the prototype, because mods change both.
+    -- numbers are read from the prototype rather than repeated here, so
+    -- data.lua stays the one place they are written down.
     local supply = number_key(pole, "supply_area_distance") or 0
     local wire = number_key(pole, "max_wire_distance") or 0
     local step = math.max(math.min(supply * 2, wire), 1)
@@ -194,26 +175,19 @@ function M.power(surface, force, box)
         poles = placed,
         step = step,
         source = "none",
-        skipped_prototypes = skipped,
     }
     if anchor == nil then
         report.note = "nowhere to put a pole"
         return report
     end
 
-    -- The mod's own source first, the game's own as the fallback if this mod's
-    -- data stage found nothing to copy.
-    local source_name = "forge-power-source"
-    if prototypes.entity[source_name] == nil then
-        source_name = "electric-energy-interface"
-    end
-    if prototypes.entity[source_name] == nil then
-        report.note = "this game has no energy source to place"
+    if prototypes.entity[SOURCE] == nil then
+        report.note = "the mod's own energy source prototype is missing"
         return report
     end
 
     local source = place_near(
-        surface, force, source_name, anchor.position, math.max(math.floor(supply), 1))
+        surface, force, SOURCE, anchor.position, math.max(math.floor(supply), 1))
     if source == nil then
         report.note = "nowhere to put the energy source"
         return report

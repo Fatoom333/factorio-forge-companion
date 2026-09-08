@@ -115,10 +115,14 @@ on.
 It does define two prototypes, and both exist only to power that scratch
 surface: an electric pole with the largest supply area the engine allows, and
 an energy source to feed it. Combinators have no energy buffer and draw from a
-network every tick, so a circuit on no network computes nothing; powering it
-with the game's own poles would mean threading a grid of them between the
-blueprint's own entities, which fails exactly when the blueprint is dense.
-Neither prototype has an item, so neither can be built, mined or held.
+network every tick, so a circuit on no network computes nothing.
+
+Both are invisible and collide with nothing, so a pole can stand on the same
+tile as a combinator and takes no space in what is being looked at. That is
+what lets the coverage be laid down over the blueprint whatever the blueprint
+contains, rather than threaded between its entities -- which is the approach
+that fails exactly when a circuit is densely packed. Neither prototype has an
+item, and neither can be selected, blueprinted or deconstructed.
 
 That surface is deleted again as soon as the command has its answer. Clearing
 the entities off it would not be enough: ground stays in a save once generated,

@@ -1,59 +1,90 @@
---- The two prototypes the mod defines, both of them tools for the scratch
---- surface and neither of them obtainable in a game.
+--- The two prototypes this mod defines. Both exist only to power the scratch
+--- surface that `/forge-circuit` builds on, and neither can be obtained,
+--- selected or seen in a game.
 ---
---- `/forge-circuit` has to power what it builds: combinators have no energy
---- buffer and draw from a network every tick, so one that is on no network
---- computes nothing at all. Doing that with the game's own poles means a grid
---- of them threaded between the blueprint's entities, which fails exactly when
---- the blueprint is dense -- the case worth recording.
+--- Why they exist at all: combinators have no energy buffer and draw from a
+--- network every tick, so a circuit on no network computes nothing, and
+--- nothing can hand an entity energy directly. Powering it with the game's own
+--- poles would mean threading a grid of them between the blueprint's entities,
+--- which fails exactly when the blueprint is dense -- the case worth recording.
 ---
---- One pole with the largest supply area the engine allows covers 128 by 128
---- tiles by itself, so in practice it is placed once, in whatever corner is
---- free, and reaches everything. That is the whole reason for defining
---- anything: a testing tool, not something the game world gains.
+--- Written out rather than copied from an existing pole, so that nothing here
+--- depends on what the player's mods happen to provide or on what those
+--- prototypes happen to answer for.
 ---
---- Both are copies of existing prototypes, so they inherit working graphics
---- and sounds without this file having to describe any. Neither has an item,
---- so neither can be built, mined or held by a player.
+--- The important part is the collision mask with no layers. It makes the pole
+--- collide with nothing at all, so it can stand on the same tile as a
+--- combinator, and its supply area covers everything regardless of how tightly
+--- the blueprint is packed. With an empty sprite it is invisible as well, so
+--- it neither takes space nor shows up in what is being looked at.
 
-local function first_of(kind)
-    for _, prototype in pairs(data.raw[kind] or {}) do
-        return prototype
-    end
-    return nil
-end
+local empty_sprite = {
+    filename = "__core__/graphics/empty.png",
+    priority = "extra-high",
+    width = 1,
+    height = 1,
+}
 
-local pole_template = first_of("electric-pole")
-if pole_template then
-    local pole = table.deepcopy(pole_template)
-    pole.name = "forge-power-pole"
-    pole.minable = nil
-    pole.placeable_by = nil
-    pole.next_upgrade = nil
-    pole.fast_replaceable_group = nil
-    pole.hidden = true
-    pole.hidden_in_factoriopedia = true
-    -- 64 is the largest supply area the engine accepts; the wire reach only
-    -- has to let two of them meet when a blueprint is wider than one covers.
-    pole.supply_area_distance = 64
-    pole.maximum_wire_distance = 64
-    data:extend({ pole })
-end
+local invisible_pole_picture = {
+    filename = "__core__/graphics/empty.png",
+    priority = "extra-high",
+    width = 1,
+    height = 1,
+    direction_count = 1,
+}
 
-local source_template = first_of("electric-energy-interface")
-if source_template then
-    local source = table.deepcopy(source_template)
-    source.name = "forge-power-source"
-    source.minable = nil
-    source.placeable_by = nil
-    source.hidden = true
-    source.hidden_in_factoriopedia = true
-    source.energy_production = "1000GW"
-    source.energy_usage = "0kW"
-    source.energy_source = {
-        type = "electric",
-        buffer_capacity = "1000GJ",
-        usage_priority = "tertiary",
-    }
-    data:extend({ source })
-end
+-- Off the grid so a placement is never nudged; off the map and out of
+-- blueprints so nothing of this leaks into what the player builds or copies.
+local flags = {
+    "placeable-off-grid",
+    "not-on-map",
+    "not-blueprintable",
+    "not-deconstructable",
+}
+
+data:extend({
+    {
+        type = "electric-pole",
+        name = "forge-power-pole",
+        icon = "__core__/graphics/empty.png",
+        icon_size = 64,
+        flags = flags,
+        hidden = true,
+        hidden_in_factoriopedia = true,
+        selectable_in_game = false,
+        max_health = 1,
+        collision_box = { { -0.05, -0.05 }, { 0.05, 0.05 } },
+        collision_mask = { layers = {} },
+        selection_box = { { 0, 0 }, { 0, 0 } },
+        -- 64 is the largest supply area the engine accepts: one pole reaches
+        -- 128 tiles across, which is most circuits in a single placement.
+        supply_area_distance = 64,
+        maximum_wire_distance = 64,
+        draw_copper_wires = false,
+        draw_circuit_wires = false,
+        pictures = invisible_pole_picture,
+        connection_points = { { wire = {}, shadow = {} } },
+    },
+    {
+        type = "electric-energy-interface",
+        name = "forge-power-source",
+        icon = "__core__/graphics/empty.png",
+        icon_size = 64,
+        flags = flags,
+        hidden = true,
+        hidden_in_factoriopedia = true,
+        selectable_in_game = false,
+        max_health = 1,
+        collision_box = { { -0.05, -0.05 }, { 0.05, 0.05 } },
+        collision_mask = { layers = {} },
+        selection_box = { { 0, 0 }, { 0, 0 } },
+        energy_source = {
+            type = "electric",
+            buffer_capacity = "1000GJ",
+            usage_priority = "tertiary",
+        },
+        energy_production = "1000GW",
+        energy_usage = "0kW",
+        picture = empty_sprite,
+    },
+})
