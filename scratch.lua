@@ -85,30 +85,50 @@ function M.prepare(surface, entities, origin)
     }
 end
 
+--- Read a number from a prototype, or nothing if it will not answer.
+---
+--- A prototype in 2.0 raises on a key that does not belong to it rather than
+--- returning nil, and the type is not a reliable guide to what it will answer
+--- for: a mod can register something as an electric pole that does not respond
+--- to `supply_area_distance` at all. Since this walks whatever prototypes the
+--- player happens to have, it has to survive that rather than assume it away.
+---@return number|nil
+local function number_key(prototype, key)
+    local ok, value = pcall(function()
+        return prototype[key]
+    end)
+    if ok and type(value) == "number" then
+        return value
+    end
+    return nil
+end
+
 --- The most generous electric pole available.
 ---
---- The mod's own pole normally wins, since it is defined with the largest
---- supply area the engine allows. The search is still a search, because that
---- pole is only defined if there was an existing one to copy, and because a
---- mod may have something better: Krastorio widens the substation's supply
---- area from 9 to 10 and adds one at 12, so a hardcoded name would pick a
---- worse pole and assume the wrong size for it.
+--- The mod's own pole is the answer whenever it exists, and it is defined with
+--- the largest supply area the engine allows, so nothing found by searching
+--- can beat it. The search below is the fallback for the case where the data
+--- stage had no pole to copy.
 ---
---- The type is checked before the supply area is read. A prototype in 2.0
---- raises on a key that does not belong to its type rather than returning nil,
---- so reading `supply_area_distance` from whatever comes back is an error, not
---- a nil to fall back from.
+---@return LuaEntityPrototype|nil, table skipped prototypes, by name
 local function best_pole()
-    local best
-    for _, proto in pairs(prototypes.entity) do
+    local own = prototypes.entity["forge-power-pole"]
+    if own ~= nil then
+        return own, {}
+    end
+
+    local best, best_supply, skipped = nil, 0, {}
+    for name, proto in pairs(prototypes.entity) do
         if proto.type == "electric-pole" then
-            local supply = proto.supply_area_distance or 0
-            if supply > 0 and (best == nil or supply > best.supply_area_distance) then
-                best = proto
+            local supply = number_key(proto, "supply_area_distance")
+            if supply == nil then
+                skipped[#skipped + 1] = name
+            elseif supply > best_supply then
+                best, best_supply = proto, supply
             end
         end
     end
-    return best
+    return best, skipped
 end
 
 --- Place one entity at a position, or as near to it as there is room.
@@ -141,7 +161,7 @@ end
 ---
 ---@return table what was laid down, for the run's diagnostics
 function M.power(surface, force, box)
-    local pole = best_pole()
+    local pole, skipped = best_pole()
     if pole == nil then
         return { poles = 0, note = "this game has no electric pole to place" }
     end
@@ -149,7 +169,9 @@ function M.power(surface, force, box)
     -- Coverage wants the poles no further apart than the area they supply;
     -- staying connected wants them within reach of each other's wires. Both
     -- numbers come from the prototype, because mods change both.
-    local step = math.min(pole.supply_area_distance * 2, pole.max_wire_distance)
+    local supply = number_key(pole, "supply_area_distance") or 0
+    local wire = number_key(pole, "max_wire_distance") or 0
+    local step = math.max(math.min(supply * 2, wire), 1)
 
     local placed, anchor = 0, nil
     local x = box.min_x
@@ -166,7 +188,14 @@ function M.power(surface, force, box)
         x = x + step
     end
 
-    local report = { pole = pole.name, poles = placed, step = step, source = "none" }
+    local report = {
+        pole = pole.name,
+        supply_area = supply,
+        poles = placed,
+        step = step,
+        source = "none",
+        skipped_prototypes = skipped,
+    }
     if anchor == nil then
         report.note = "nowhere to put a pole"
         return report
@@ -184,7 +213,7 @@ function M.power(surface, force, box)
     end
 
     local source = place_near(
-        surface, force, source_name, anchor.position, math.floor(pole.supply_area_distance))
+        surface, force, source_name, anchor.position, math.max(math.floor(supply), 1))
     if source == nil then
         report.note = "nowhere to put the energy source"
         return report
