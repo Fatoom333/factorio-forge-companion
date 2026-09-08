@@ -239,7 +239,7 @@ local function confirmed(player, parameter, ticks)
     player.print({
         "forge.circuit-cost",
         ticks,
-        string.format("%.1f", ticks / 60),
+        string.format("%.1f", ticks / constants.ticks_per_second),
         settings.global["forge-circuit-speed"].value,
     })
     player.print({ "forge.circuit-confirm" })

@@ -11,17 +11,14 @@ local constants = require("constants")
 
 local M = {}
 
-local NAME = "forge-scratch"
-local CHUNK = 32
-
 --- The scratch surface, created on first use.
 ---
 --- Lab tiles because they are flat, buildable and free of decoration; day
 --- frozen because a circuit run must not be measuring the time of day.
 function M.surface()
-    local surface = game.surfaces[NAME]
+    local surface = game.surfaces[constants.scratch_surface]
     if not surface then
-        surface = game.create_surface(NAME, { width = 2000, height = 2000 })
+        surface = game.create_surface(constants.scratch_surface, { width = constants.scratch_size, height = constants.scratch_size })
         surface.generate_with_lab_tiles = true
         surface.always_day = true
         surface.freeze_daytime = true
@@ -61,7 +58,7 @@ end
 ---
 ---@return string "removed", "absent" or "occupied"
 function M.remove()
-    local surface = game.surfaces[NAME]
+    local surface = game.surfaces[constants.scratch_surface]
     if not surface then
         return "absent"
     end
@@ -90,7 +87,7 @@ function M.prepare(surface, entities, origin)
     -- A square of chunks around the paste point, wide enough for the whole
     -- blueprint and one chunk of slack, since an entity can reach past the
     -- position it is recorded at.
-    surface.request_to_generate_chunks(origin, math.ceil(reach / CHUNK) + 1)
+    surface.request_to_generate_chunks(origin, math.ceil(reach / constants.chunk_size) + 1)
     surface.force_generate_chunk_requests()
 
     return {
@@ -124,8 +121,7 @@ end
 --- for their own supply area, and have to be threaded between the blueprint's
 --- entities. Ours collides with nothing and is invisible, so it goes wherever
 --- it is needed and covers whatever is there.
-local POLE = "forge-power-pole"
-local SOURCE = "forge-power-source"
+
 
 --- Place one entity at a position, or as near to it as there is room.
 local function place_near(surface, force, name, position, limit)
@@ -157,7 +153,7 @@ end
 ---
 ---@return table what was laid down, for the run's diagnostics
 function M.power(surface, force, box)
-    local pole = prototypes.entity[POLE]
+    local pole = prototypes.entity[constants.pole]
     if pole == nil then
         return { poles = 0, note = "the mod's own pole prototype is missing" }
     end
@@ -175,7 +171,7 @@ function M.power(surface, force, box)
     while x <= box.max_x + step do
         local y = box.min_y
         while y <= box.max_y + step do
-            local entity = place_near(surface, force, pole.name, { x = x, y = y }, 3)
+            local entity = place_near(surface, force, pole.name, { x = x, y = y }, constants.placement_search)
             if entity then
                 placed = placed + 1
                 anchor = anchor or entity
@@ -197,13 +193,13 @@ function M.power(surface, force, box)
         return report
     end
 
-    if prototypes.entity[SOURCE] == nil then
+    if prototypes.entity[constants.source] == nil then
         report.note = "the mod's own energy source prototype is missing"
         return report
     end
 
     local source = place_near(
-        surface, force, SOURCE, anchor.position, math.max(math.floor(supply), 1))
+        surface, force, constants.source, anchor.position, math.max(math.floor(supply), 1))
     if source == nil then
         report.note = "nowhere to put the energy source"
         return report
