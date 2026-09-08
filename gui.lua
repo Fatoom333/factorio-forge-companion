@@ -49,16 +49,49 @@ end
 --- in `cursor_record` and is not an item at all. Checking only the stack made
 --- the window insist there was nothing in hand while a blueprint was plainly
 --- being held -- the library is where most blueprints are kept.
+--- Rebuild a library record as a blueprint string.
+---
+--- The record knows its own contents, and a fresh blueprint made from them
+--- exports like any other. Slower and longer than asking the record to export
+--- itself, which is why it is the second choice rather than the first.
+local function rebuild(record)
+    local inventory = game.create_inventory(1)
+    inventory[1].set_stack({ name = "blueprint" })
+
+    local ok = pcall(function()
+        inventory[1].set_blueprint_entities(record.get_blueprint_entities())
+        local tiles = record.get_blueprint_tiles()
+        if tiles then
+            inventory[1].set_blueprint_tiles(tiles)
+        end
+        -- Carried across so the copy is the same blueprint, not merely the
+        -- same entities: a city block without its grid snapping is a
+        -- different thing.
+        inventory[1].label = record.label
+        inventory[1].blueprint_snap_to_grid = record.blueprint_snap_to_grid
+        inventory[1].blueprint_absolute_snapping = record.blueprint_absolute_snapping
+        inventory[1].blueprint_position_relative_to_grid =
+            record.blueprint_position_relative_to_grid
+    end)
+
+    local text = ok and inventory[1].export_stack() or nil
+    inventory.destroy()
+    if text == "" then
+        return nil
+    end
+    return text
+end
+
 function M.blueprint_in_hand(player)
     local record = player.cursor_record
     if record ~= nil and record.valid and record.type == "blueprint" then
         local ok, text = pcall(function()
             return record.export_stack()
         end)
-        if ok and text ~= "" then
+        if ok and text ~= nil and text ~= "" then
             return text
         end
-        return nil
+        return rebuild(record)
     end
 
     local stack = player.cursor_stack
