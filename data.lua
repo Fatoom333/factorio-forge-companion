@@ -47,7 +47,7 @@ local flags = {
 data:extend({
     {
         type = "electric-pole",
-        name = "forge-power-pole",
+        name = constants.pole,
         icon = "__core__/graphics/empty.png",
         icon_size = 64,
         flags = flags,
@@ -67,7 +67,7 @@ data:extend({
     },
     {
         type = "electric-energy-interface",
-        name = "forge-power-source",
+        name = constants.source,
         icon = "__core__/graphics/empty.png",
         icon_size = 64,
         flags = flags,
