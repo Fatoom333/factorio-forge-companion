@@ -170,6 +170,10 @@ local function verify_blueprint(player, text)
     inventory.destroy()
     write("verify.json", report, player)
     player.print({ "forge.verified", report.placed, report.expected })
+
+    -- The answer has been read, so the surface has served its purpose and
+    -- leaves nothing behind in the save.
+    scratch.remove()
 end
 
 commands.add_command("forge-export", { "forge.cmd-export" }, function(event)
@@ -213,6 +217,18 @@ commands.add_command("forge-circuit", { "forge.cmd-circuit" }, function(event)
         return
     end
     circuit.start(player, text, tonumber(ticks))
+end)
+
+commands.add_command("forge-clean", { "forge.cmd-clean" }, function(event)
+    local player = game.get_player(event.player_index)
+    local status = scratch.remove()
+    if status == "removed" then
+        player.print({ "forge.cleaned" })
+    elseif status == "occupied" then
+        player.print({ "forge.clean-occupied" })
+    else
+        player.print({ "forge.clean-absent" })
+    end
 end)
 
 script.on_load(circuit.on_load)
