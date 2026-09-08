@@ -15,4 +15,12 @@ return {
     -- Far more than any circuit can draw: a combinator costs a kilowatt, and
     -- the point is that power is never the reason something did not run.
     source_production = 1000000000,
+
+    -- Above this a run is worth stopping to think about: ten seconds of game
+    -- time is a moment on a scratch save and a real absence on a live base.
+    confirm_above_ticks = 600,
+
+    -- How long a warning stands before the same command counts as a fresh
+    -- request rather than a confirmation. One minute of game time.
+    confirmation_lasts = 3600,
 }

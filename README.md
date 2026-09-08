@@ -72,8 +72,18 @@ counter, clock and latch, so a summary that loses tick boundaries loses the
 thing being studied.
 
 The game is sped up while a run is in progress and returned to normal
-afterwards. A five minute timer is eighteen thousand ticks, and waiting five
-real minutes for it would be absurd.
+afterwards — a five minute timer is eighteen thousand ticks, and waiting five
+real minutes for it would be absurd. How far it is sped up is a mod setting,
+*Circuit run speed*, because the right answer depends on where the run
+happens.
+
+A run costs the world exactly the ticks it asks for, whatever speed they pass
+at — that is unavoidable, since the circuit only computes if the ticks really
+happen. What speed decides is whether you are there for them: at sixty, five
+minutes of game time passes in about five seconds, and a base under attack goes
+unattended through all of it. Runs longer than ten seconds of game time
+therefore say what they will cost and start nothing until the same command is
+given again, so there is a moment to save first.
 
 Every entity is held at full charge for the duration. Combinators are
 electrical devices, and an unpowered one does not compute, so a run on a

@@ -25,6 +25,7 @@ $contents = @(
     "info.json",
     "control.lua",
     "data.lua",
+    "settings.lua",
     "circuit.lua",
     "constants.lua",
     "scratch.lua",
