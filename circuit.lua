@@ -135,32 +135,6 @@ local function diagnose(entities)
     return out
 end
 
---- One sample of everything wired, keyed by where it is.
-local function sample(entities)
-    local frame = {}
-    for _, entity in pairs(entities) do
-        if entity.valid then
-            -- One decimal, not an integer: an entity with an odd footprint
-            -- sits on a half tile, and rounding two neighbours to the same
-            -- whole number would silently merge them into one recording.
-            local at = string.format("%.1f,%.1f", entity.position.x, entity.position.y)
-            local readings = {}
-            local any = false
-            for _, connector in pairs(CONNECTORS) do
-                local ok, network = pcall(entity.get_circuit_network, connector.id)
-                if ok and network then
-                    readings[connector.label] = read_network(network)
-                    any = true
-                end
-            end
-            if any then
-                frame[at .. " " .. entity.name] = readings
-            end
-        end
-    end
-    return frame
-end
-
 --- Start a run. Collection happens on the tick handler below.
 ---@param player LuaPlayer
 ---@param text string blueprint string
