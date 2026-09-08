@@ -89,6 +89,55 @@ end
 --- This is what makes "show me your city block" a button press rather than a
 --- manual selection, and it is exact: the game builds the blueprint, so the
 --- result is what the game would have given you.
+--- What the game itself says about the underground runs inside an area.
+---
+--- An underground belt or pipe knows its own partner, and the game will say
+--- which it is. Everything outside can only infer it from directions and
+--- distances, and that inference is exactly what went wrong twice: first
+--- reading the run as following the entity's facing, then arguing about a pipe
+--- that caps a row. There is no need to argue with something that can be
+--- asked.
+---
+--- Written beside the blueprint, so a checker can be held against the truth
+--- rather than against another reading of the same picture.
+local function export_underground_pairs(player, area, name)
+    local runs = {}
+    for _, entity in pairs(player.surface.find_entities_filtered({
+        area = area,
+        type = { "underground-belt", "pipe-to-ground" },
+    })) do
+        local partners = {}
+        for _, neighbour in pairs(entity.neighbours or {}) do
+            -- Pipes hand back a flat list; belts hand back the one partner.
+            if neighbour.position then
+                partners[#partners + 1] = {
+                    name = neighbour.name,
+                    x = neighbour.position.x,
+                    y = neighbour.position.y,
+                }
+            end
+        end
+        runs[#runs + 1] = {
+            name = entity.name,
+            type = entity.type,
+            x = entity.position.x,
+            y = entity.position.y,
+            direction = entity.direction,
+            io_type = entity.type == "underground-belt" and entity.belt_to_ground_type or nil,
+            partners = partners,
+        }
+    end
+
+    local path = OUTPUT .. "blueprints/" .. name .. "-underground.json"
+    helpers.write_file(path, helpers.table_to_json({
+        exported_by = "factorio-forge-companion",
+        note = "Each underground entity in the exported area, with the partner "
+            .. "the game itself reports. Directions are the entity's own.",
+        runs = runs,
+    }), false)
+    return #runs
+end
+
 local function export_region(player, area, name, with_tiles)
     local inventory = game.create_inventory(1)
     inventory[1].set_stack({ name = "blueprint" })
@@ -117,6 +166,7 @@ local function export_region(player, area, name, with_tiles)
 
     local file = OUTPUT .. "blueprints/" .. name .. ".txt"
     helpers.write_file(file, text, false)
+    export_underground_pairs(player, area, name)
     player.print({ "forge.region-written", table_size(placed), file })
     return text
 end
