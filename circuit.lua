@@ -270,6 +270,24 @@ function M.on_tick()
 end
 
 --- Restore the tick handler after a save is loaded mid-run.
+--- Stop a run in its tracks, keeping nothing.
+---
+--- There was no way to do this, and a five minute recording asked for by
+--- mistake had to be waited out. Nothing is written: a recording that was
+--- abandoned halfway is not a shorter recording, it is a misleading one.
+---
+---@return number|nil how many ticks had been recorded, or nil if none was running
+function M.abort()
+    local run = storage.run
+    if run == nil then
+        return nil
+    end
+    storage.run = nil
+    script.on_event(defines.events.on_tick, nil)
+    M.restore_speed()
+    return #run.frames
+end
+
 --- Put the game speed back where it was, if we are the ones who moved it.
 ---
 --- Only when the speed is still the one this mod raised it to: a player who
