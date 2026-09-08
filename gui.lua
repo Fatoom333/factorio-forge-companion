@@ -44,9 +44,14 @@ end
 
 --- Rebuild a library record as a blueprint string.
 ---
---- The record knows its own entities and tiles, and a fresh blueprint made
---- from them exports like any other. Slower than asking the record to export
---- itself, which is why it is the second choice.
+--- A record is a thinner thing than it looks. This version of the API gives it
+--- no `export_stack` and no `label`, so neither asking it to export itself nor
+--- copying its name is possible -- but `get_blueprint_entities` works, and the
+--- entities are the blueprint. Everything else is a convenience.
+---
+--- So the contents are required and the trimmings are attempted: a missing
+--- label must not cost the whole blueprint, which is exactly what happened
+--- when they were fetched together.
 ---
 ---@return string|nil, string what came out, and why not if nothing did
 local function rebuild(record)
@@ -55,26 +60,39 @@ local function rebuild(record)
 
     local ok, err = pcall(function()
         inventory[1].set_blueprint_entities(record.get_blueprint_entities())
+    end)
+    if not ok then
+        inventory.destroy()
+        return nil, "no entities: " .. tostring(err)
+    end
+
+    pcall(function()
         local tiles = record.get_blueprint_tiles()
         if tiles then
             inventory[1].set_blueprint_tiles(tiles)
         end
-        -- Carried across so the copy is the same blueprint rather than merely
-        -- the same entities: a city block without its grid snapping is a
-        -- different thing.
-        inventory[1].label = record.label
-        inventory[1].blueprint_snap_to_grid = record.blueprint_snap_to_grid
-        inventory[1].blueprint_absolute_snapping = record.blueprint_absolute_snapping
-        inventory[1].blueprint_position_relative_to_grid =
-            record.blueprint_position_relative_to_grid
     end)
 
-    local text = ok and inventory[1].export_stack() or nil
+    -- Each on its own, so one the record does not have costs only itself.
+    -- Grid snapping is worth the attempt: a city block without it is a
+    -- different blueprint rather than the same one.
+    for _, field in pairs({
+        "label",
+        "blueprint_snap_to_grid",
+        "blueprint_absolute_snapping",
+        "blueprint_position_relative_to_grid",
+    }) do
+        pcall(function()
+            inventory[1][field] = record[field]
+        end)
+    end
+
+    local text = inventory[1].export_stack()
     inventory.destroy()
     if text ~= nil and text ~= "" then
         return text, ""
     end
-    return nil, ok and "rebuilt but empty" or ("rebuild failed: " .. tostring(err))
+    return nil, "rebuilt but empty"
 end
 
 --- The blueprint the player is holding, as a string, or nil and the reason.
