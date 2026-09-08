@@ -93,7 +93,7 @@ end
 --- to `supply_area_distance` at all. Since this walks whatever prototypes the
 --- player happens to have, it has to survive that rather than assume it away.
 ---@return number|nil
-local function number_key(prototype, key)
+function M.number_key(prototype, key)
     local ok, value = pcall(function()
         return prototype[key]
     end)
@@ -150,8 +150,8 @@ function M.power(surface, force, box)
     -- staying connected wants them within reach of each other's wires. Both
     -- numbers are read from the prototype rather than repeated here, so
     -- data.lua stays the one place they are written down.
-    local supply = number_key(pole, "supply_area_distance") or 0
-    local wire = number_key(pole, "max_wire_distance") or 0
+    local supply = M.number_key(pole, "supply_area_distance") or 0
+    local wire = M.number_key(pole, "max_wire_distance") or 0
     local step = math.max(math.min(supply * 2, wire), 1)
 
     local placed, anchor = 0, nil
@@ -193,8 +193,9 @@ function M.power(surface, force, box)
         return report
     end
 
-    -- Whatever the prototype is capable of, rather than a number chosen here.
-    source.power_production = source.prototype.max_energy_production
+    -- Production is not set here: the prototype in data.lua declares it, and
+    -- the entity is created producing exactly that. Asking the prototype what
+    -- it is capable of was both unnecessary and a key it does not answer for.
     report.source = source.name
     return report
 end
