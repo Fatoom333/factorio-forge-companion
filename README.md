@@ -112,7 +112,11 @@ the logic does, not whether your power holds up.
 
 ### `/forge-clean`
 
-Deletes the scratch surface, in case a run left one behind.
+Deletes the scratch surface, in case a run left one behind, stops a circuit
+run that is still going, and puts back a game speed one of them raised.
+
+Stopping writes nothing: a recording abandoned halfway is not a shorter
+recording, it is a misleading one.
 
 The two commands above delete it themselves when they finish, so this is only
 needed if something was interrupted — a save taken in the middle of a circuit
