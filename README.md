@@ -74,13 +74,21 @@ real minutes for it would be absurd.
 
 ## Installing
 
-Copy or link this folder into your Factorio `mods` directory. On Windows:
-
-```
-mklink /J "%APPDATA%\Factorio\mods\factorio-forge-companion" "<this folder>"
+```powershell
+.\tools\install.ps1
 ```
 
-Then enable it in the mod list and restart the game.
+Copies the mod into Factorio's `mods` folder and switches it on. Run it again
+after any change — nothing picks edits up on its own. Set `FACTORIO_USER_DIR`
+if your Factorio user directory is somewhere unusual.
+
+Then restart Factorio, or reload the save.
+
+> A directory junction would be tidier, since the game would read the working
+> copy directly, and that is the advice you will find elsewhere. It did not work
+> here: a junction pointing at another drive listed its entries but every file
+> inside failed to open, so the game would have found the mod and been unable to
+> read a line of it. Copying is dull and works.
 
 ## A note on scope
 
