@@ -46,6 +46,30 @@ local function read_network(network)
     return { id = network.network_id, signals = signals }
 end
 
+--- Fill the energy buffer of everything that needs one.
+---
+--- Combinators are electrical devices -- one kilowatt each -- and an unpowered
+--- combinator does not compute at all. The scratch surface carries no power
+--- network, so without this a run records the right number of frames with
+--- nothing whatsoever happening in them, which is exactly what the first
+--- version produced: a counter that never counted.
+---
+--- The buffer is filled directly rather than by building a power network,
+--- which would mean poles and an energy source laid out among the blueprint's
+--- own entities, colliding with them and appearing in the recording. Holding
+--- everything at full charge is deliberate: the recording answers what the
+--- logic does, not whether the player's power holds up.
+local function recharge(entities)
+    for _, entity in pairs(entities) do
+        if entity.valid then
+            local source = entity.prototype.electric_energy_source_prototype
+            if source then
+                entity.energy = source.buffer_capacity
+            end
+        end
+    end
+end
+
 --- One sample of everything wired, keyed by where it is.
 local function sample(entities)
     local frame = {}
@@ -93,9 +117,8 @@ function M.start(player, text, ticks)
     local origin = { x = 0, y = 0 }
     scratch.prepare(surface, inventory[1].get_blueprint_entities(), origin)
 
-    -- Built rather than ghosted, and powered from nowhere: an electric energy
-    -- interface would be needed for machines, but combinators run on so little
-    -- that what matters here is that they exist and are wired.
+    -- Built rather than ghosted: a ghost has no circuit network and nothing to
+    -- read. Power comes from `recharge` below rather than from a network.
     local built = inventory[1].build_blueprint({
         surface = surface,
         force = player.force,
@@ -124,6 +147,10 @@ function M.start(player, text, ticks)
         return
     end
 
+    -- Charged before the first tick, so the run starts in the state the rest
+    -- of it will be in rather than idling until the first top-up.
+    recharge(entities)
+
     storage.run = {
         player = player.index,
         entities = entities,
@@ -148,6 +175,8 @@ function M.on_tick()
         script.on_event(defines.events.on_tick, nil)
         return
     end
+
+    recharge(run.entities)
 
     run.frames[#run.frames + 1] = {
         tick = game.tick - run.started_tick,
