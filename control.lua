@@ -89,15 +89,15 @@ end
 --- This is what makes "show me your city block" a button press rather than a
 --- manual selection, and it is exact: the game builds the blueprint, so the
 --- result is what the game would have given you.
-local function export_region(player, x1, y1, x2, y2, name)
+local function export_region(player, area, name, with_tiles)
     local inventory = game.create_inventory(1)
     inventory[1].set_stack({ name = "blueprint" })
 
     local placed = inventory[1].create_blueprint({
         surface = player.surface,
         force = player.force,
-        area = { { x1, y1 }, { x2, y2 } },
-        always_include_tiles = true,
+        area = area,
+        always_include_tiles = with_tiles,
         include_entities = true,
         include_modules = true,
         include_station_names = true,
@@ -198,7 +198,12 @@ commands.add_command("forge-region", { "forge.cmd-region" }, function(event)
         player.print({ "forge.region-usage" })
         return
     end
-    export_region(player, x1, y1, x2, y2, words[5] or ("region-" .. game.tick))
+    export_region(
+        player,
+        { { x1, y1 }, { x2, y2 } },
+        words[5] or ("region-" .. game.tick),
+        true
+    )
 end)
 
 commands.add_command("forge-verify", { "forge.cmd-verify" }, function(event)
@@ -269,6 +274,29 @@ commands.add_command("forge-clean", { "forge.cmd-clean" }, function(event)
     else
         player.print({ "forge.clean-absent" })
     end
+end)
+
+--- Dragging the selection tool exports whatever rectangle was dragged.
+---
+--- The area is what is used, not the entities the game hands over with it: the
+--- export asks the game to build a blueprint of the rectangle, which is what
+--- its own export button would have given. Selecting normally takes the tiles
+--- as well -- concrete and bricks are part of a city block -- and alt-select
+--- leaves them out, for when only the machinery is wanted.
+local function on_selection(event, with_tiles)
+    if event.item ~= constants.selector then
+        return
+    end
+    local player = game.get_player(event.player_index)
+    export_region(player, event.area, "region-" .. game.tick, with_tiles)
+end
+
+script.on_event(defines.events.on_player_selected_area, function(event)
+    on_selection(event, true)
+end)
+
+script.on_event(defines.events.on_player_alt_selected_area, function(event)
+    on_selection(event, false)
 end)
 
 script.on_load(circuit.on_load)

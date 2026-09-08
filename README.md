@@ -37,10 +37,19 @@ whether a mod's loaders exist at all. Extracting game data without them is
 subtly wrong in a way nothing detects, which is the main reason this command
 exists.
 
-### `/forge-region <x1> <y1> <x2> <y2> [name]`
+### The region selector, and `/forge-region <x1> <y1> <x2> <y2> [name]`
 
 Exports a rectangle of the map as a blueprint string, written to
 `blueprints/<name>.txt`.
+
+The rectangle is usually easier dragged than typed. A shortcut on the toolbar
+hands over a selection tool; drag it over the city block and the export
+happens, amber border while you drag so it is not mistaken for a blueprint
+selection. Dragging with Alt held leaves the tiles out, for when only the
+machinery is wanted.
+
+The command remains, and is the form a script would call, or the one to use
+when the area is known but not on screen.
 
 The game builds the blueprint, so the result is exactly what its own export
 button would have given you. This turns "show me your city block" into a
