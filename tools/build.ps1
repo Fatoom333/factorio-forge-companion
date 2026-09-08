@@ -25,6 +25,7 @@ $contents = @(
     "info.json",
     "control.lua",
     "circuit.lua",
+    "scratch.lua",
     "LICENSE",
     "locale/en/strings.cfg",
     "locale/ru/strings.cfg"

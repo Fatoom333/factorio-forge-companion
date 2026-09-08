@@ -11,10 +11,11 @@
 --- latches, so a summary that loses tick boundaries loses the thing being
 --- studied.
 
+local scratch = require("scratch")
+
 local M = {}
 
 local OUTPUT = "factorio-forge/"
-local SCRATCH = "forge-scratch"
 
 -- Combinators keep their input and output on separate connectors; everything
 -- else has one pair. Reading all of them and keeping whichever exist avoids
@@ -27,17 +28,6 @@ local CONNECTORS = {
     { id = defines.wire_connector_id.combinator_output_red, label = "output-red" },
     { id = defines.wire_connector_id.combinator_output_green, label = "output-green" },
 }
-
-local function scratch_surface()
-    local surface = game.surfaces[SCRATCH]
-    if not surface then
-        surface = game.create_surface(SCRATCH, { width = 2000, height = 2000 })
-        surface.generate_with_lab_tiles = true
-        surface.always_day = true
-        surface.freeze_daytime = true
-    end
-    return surface
-end
 
 --- Every signal on one network, as a plain name to count mapping.
 local function read_network(network)
@@ -61,7 +51,10 @@ local function sample(entities)
     local frame = {}
     for _, entity in pairs(entities) do
         if entity.valid then
-            local at = string.format("%d,%d", entity.position.x, entity.position.y)
+            -- One decimal, not an integer: an entity with an odd footprint
+            -- sits on a half tile, and rounding two neighbours to the same
+            -- whole number would silently merge them into one recording.
+            local at = string.format("%.1f,%.1f", entity.position.x, entity.position.y)
             local readings = {}
             local any = false
             for _, connector in pairs(CONNECTORS) do
@@ -92,10 +85,13 @@ function M.start(player, text, ticks)
         return
     end
 
-    local surface = scratch_surface()
-    for _, entity in pairs(surface.find_entities()) do
-        entity.destroy()
-    end
+    local surface = scratch.surface()
+    scratch.clear(surface)
+
+    -- Ungenerated chunks are ground that does not exist yet, and building on
+    -- them places nothing at all.
+    local origin = { x = 0, y = 0 }
+    scratch.prepare(surface, inventory[1].get_blueprint_entities(), origin)
 
     -- Built rather than ghosted, and powered from nowhere: an electric energy
     -- interface would be needed for machines, but combinators run on so little
@@ -103,7 +99,7 @@ function M.start(player, text, ticks)
     local built = inventory[1].build_blueprint({
         surface = surface,
         force = player.force,
-        position = { x = 0, y = 0 },
+        position = origin,
         build_mode = defines.build_mode.forced,
     })
     inventory.destroy()

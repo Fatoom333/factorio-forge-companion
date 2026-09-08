@@ -9,6 +9,7 @@
 --- Everything lands in `script-output/factorio-forge/`.
 
 local circuit = require("circuit")
+local scratch = require("scratch")
 
 local OUTPUT = "factorio-forge/"
 
@@ -132,17 +133,13 @@ local function verify_blueprint(player, text)
         return
     end
 
-    local surface = game.surfaces["forge-scratch"]
-    if not surface then
-        surface = game.create_surface("forge-scratch", { width = 2000, height = 2000 })
-        surface.generate_with_lab_tiles = true
-        surface.always_day = true
-    end
-    -- A fresh area every time, so one run cannot collide with the last.
-    local origin = { x = (game.tick % 200) * 512, y = 0 }
-    for _, entity in pairs(surface.find_entities()) do
-        entity.destroy()
-    end
+    local surface = scratch.surface()
+    scratch.clear(surface)
+
+    -- The ground has to exist before anything can be built on it, and the
+    -- chunks of a freshly created surface do not exist until asked for.
+    local origin = { x = 0, y = 0 }
+    scratch.prepare(surface, inventory[1].get_blueprint_entities(), origin)
 
     local ghosts = inventory[1].build_blueprint({
         surface = surface,
