@@ -199,7 +199,6 @@ function M.start(player, text, ticks)
         remaining = ticks,
         total = ticks,
         started_tick = game.tick,
-        previous_speed = game.speed,
         frames = {},
     }
 
@@ -207,7 +206,13 @@ function M.start(player, text, ticks)
     -- eighteen thousand ticks, and waiting five real minutes for it is absurd.
     -- How far outside it is the player's setting, since on a live base the
     -- difference is between watching the run and merely surviving it.
-    game.speed = settings.global["forge-circuit-speed"].value
+    --
+    -- Both speeds are remembered outside the run, so that a run which never
+    -- reaches its end -- the game closed halfway through, the mod removed --
+    -- still leaves enough behind to put the speed back.
+    local raised = settings.global["forge-circuit-speed"].value
+    storage.speed = { before = game.speed, raised_to = raised }
+    game.speed = raised
 
     script.on_event(defines.events.on_tick, M.on_tick)
     player.print({ "forge.circuit-started", #entities, ticks })
@@ -230,7 +235,7 @@ function M.on_tick()
         return
     end
 
-    game.speed = run.previous_speed
+    M.restore_speed()
     script.on_event(defines.events.on_tick, nil)
 
     local player = game.get_player(run.player)
@@ -265,9 +270,39 @@ function M.on_tick()
 end
 
 --- Restore the tick handler after a save is loaded mid-run.
+--- Put the game speed back where it was, if we are the ones who moved it.
+---
+--- Only when the speed is still the one this mod raised it to: a player who
+--- has since set their own speed should keep it. Returns whether there was
+--- anything to put back.
+function M.restore_speed()
+    local kept = storage.speed
+    if kept == nil then
+        return false
+    end
+    if game.speed == kept.raised_to then
+        game.speed = kept.before
+    end
+    storage.speed = nil
+    return true
+end
+
+--- A run that never finished still raised the speed, and the save carries it.
+---
+--- The recovery cannot happen in `on_load`, where touching the game state is
+--- forbidden, so it happens on the first tick after the save is loaded and
+--- then takes itself off again.
+local function recover_speed()
+    script.on_event(defines.events.on_tick, nil)
+    M.restore_speed()
+end
+
 function M.on_load()
     if storage.run then
         script.on_event(defines.events.on_tick, M.on_tick)
+    elseif storage.speed then
+        -- Raised for a run that is no longer there: put it back and stop.
+        script.on_event(defines.events.on_tick, recover_speed)
     end
 end
 
