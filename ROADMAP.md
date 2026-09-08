@@ -14,7 +14,7 @@ block and be done, with the coordinates coming from the drag.
 The command should stay. It is what a script or another tool would call, and it
 is the only form that works when the area is known but not visible.
 
-## A small window
+## ~~A small window~~ — done in 0.5.0
 
 Four commands typed into a console, each with its own argument order, is a poor
 way to reach a tool used often. A window with the four actions, the run length
