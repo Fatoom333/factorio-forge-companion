@@ -54,15 +54,45 @@ function M.blueprint_in_hand(player)
     return stack.export_stack()
 end
 
+--- Find an element by name anywhere below this one.
+---
+--- Addressing children by position is what broke the first version: the button
+--- for a circuit run lives inside a row, not directly in the body, so looking
+--- for it there found nothing. Names are stable, positions are not.
+local function find(element, name)
+    if element == nil or not element.valid then
+        return nil
+    end
+    if element[name] then
+        return element[name]
+    end
+    for _, child in pairs(element.children) do
+        local found = find(child, name)
+        if found then
+            return found
+        end
+    end
+    return nil
+end
+
+--- Where the window lives: the left-hand flow mods share, under their buttons.
+---
+--- Not the screen. A window floating in the middle is something to move out of
+--- the way before playing; one in the corner sits where every other mod's does
+--- and needs nothing done to it.
+local function container(player)
+    return mod_gui.get_frame_flow(player)
+end
+
 local function status(player, message)
-    local window = player.gui.screen[NAME]
-    if window and window.status then
-        window.status.caption = message
+    local label = find(container(player)[NAME], "status")
+    if label then
+        label.caption = message
     end
 end
 
 function M.close(player)
-    local window = player.gui.screen[NAME]
+    local window = container(player)[NAME]
     if window then
         window.destroy()
     end
@@ -71,20 +101,18 @@ end
 function M.open(player)
     M.close(player)
 
-    local window = player.gui.screen.add({
+    local window = container(player).add({
         type = "frame",
         name = NAME,
         direction = "vertical",
     })
-    window.auto_center = true
 
     local title = window.add({ type = "flow", direction = "horizontal" })
-    title.drag_target = window
+    title.style.horizontally_stretchable = true
     title.add({ type = "label", caption = { "forge.window-title" }, style = "frame_title" })
-    local filler = title.add({ type = "empty-widget", style = "draggable_space_header" })
+    local filler = title.add({ type = "empty-widget" })
     filler.style.horizontally_stretchable = true
     filler.style.height = 24
-    filler.drag_target = window
     title.add({
         type = "sprite-button",
         name = "forge-close",
@@ -126,19 +154,26 @@ end
 
 --- Keep the window honest about what is in the cursor.
 function M.refresh(player)
-    local window = player.gui.screen[NAME]
+    local window = container(player)[NAME]
     if window == nil then
         return
     end
     local held = M.blueprint_in_hand(player) ~= nil
-    local label = window.children[2]["forge-held"]
-    label.caption = held and { "forge.window-blueprint-held" } or { "forge.window-nothing-held" }
-    window.children[2]["forge-do-verify"].enabled = held
-    window.children[2]["forge-do-circuit"].enabled = held
+    local label = find(window, "forge-held")
+    if label then
+        label.caption = held and { "forge.window-blueprint-held" }
+            or { "forge.window-nothing-held" }
+    end
+    for _, name in pairs({ "forge-do-verify", "forge-do-circuit" }) do
+        local button = find(window, name)
+        if button then
+            button.enabled = held
+        end
+    end
 end
 
 function M.toggle(player)
-    if player.gui.screen[NAME] then
+    if container(player)[NAME] then
         M.close(player)
     else
         M.open(player)
@@ -172,8 +207,8 @@ function M.on_click(event)
         if name == "forge-do-verify" then
             M.actions.verify(player, text)
         else
-            local window = player.gui.screen[NAME]
-            local ticks = tonumber(window.children[2]["forge-ticks"].text) or 0
+            local field = find(container(player)[NAME], "forge-ticks")
+            local ticks = tonumber(field and field.text or "") or 0
             if ticks < 1 then
                 status(player, { "forge.window-ticks-needed" })
                 return
