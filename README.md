@@ -72,6 +72,14 @@ The game is sped up while a run is in progress and returned to normal
 afterwards. A five minute timer is eighteen thousand ticks, and waiting five
 real minutes for it would be absurd.
 
+### `/forge-clean`
+
+Deletes the scratch surface, in case a run left one behind.
+
+The two commands above delete it themselves when they finish, so this is only
+needed if something was interrupted — a save taken in the middle of a circuit
+run, say. It refuses while you are standing on the surface.
+
 ## Building
 
 ```powershell
@@ -97,6 +105,11 @@ This mod only reads and writes files. It adds no prototypes, changes no
 recipes, and touches nothing in your world — `/forge-verify` and
 `/forge-circuit` work on a separate scratch surface created for the purpose,
 never on the surface you are playing on.
+
+That surface is deleted again as soon as the command has its answer. Clearing
+the entities off it would not be enough: ground stays in a save once generated,
+and would grow with the largest blueprint ever checked, so the surface goes
+rather than accumulates.
 
 ## Licence
 

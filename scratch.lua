@@ -34,6 +34,30 @@ function M.clear(surface)
     end
 end
 
+--- Delete the surface outright, chunks and all.
+---
+--- Clearing the entities is not enough. The ground stays in the save for good
+--- once generated, and grows with the largest blueprint ever checked, so a mod
+--- that promises to touch nothing in your world has to take it back out again.
+---
+--- Refuses while somebody is standing on it, since deleting the ground under a
+--- player is a surprise nobody asked for.
+---
+---@return string "removed", "absent" or "occupied"
+function M.remove()
+    local surface = game.surfaces[NAME]
+    if not surface then
+        return "absent"
+    end
+    for _, player in pairs(game.players) do
+        if player.surface == surface then
+            return "occupied"
+        end
+    end
+    game.delete_surface(surface)
+    return "removed"
+end
+
 --- Generate the ground the blueprint is about to be built on.
 ---
 ---@param surface LuaSurface

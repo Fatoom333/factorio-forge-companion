@@ -120,6 +120,7 @@ function M.start(player, text, ticks)
 
     if #entities == 0 then
         player.print({ "forge.circuit-nothing-built" })
+        scratch.remove()
         return
     end
 
@@ -172,6 +173,10 @@ function M.on_tick()
         frames = run.frames,
     }), false)
     storage.run = nil
+
+    -- Only now, with the recording written: the circuit had to keep running
+    -- somewhere until the last tick was sampled.
+    scratch.remove()
 
     if player then
         player.print({ "forge.circuit-done", run.total, path })
