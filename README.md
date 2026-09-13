@@ -37,6 +37,19 @@ whether a mod's loaders exist at all. Extracting game data without them is
 subtly wrong in a way nothing detects, which is the main reason this command
 exists.
 
+Since 0.7.0 it also writes `bonuses`, the sums the in-game bonus screen shows,
+read from the force rather than added up from technologies (some come from
+elsewhere -- the bulk inserter technology itself raises bulk inserter capacity):
+
+- `force`: inserter and bulk inserter capacity, belt stack size, mining
+  productivity, lab speed and productivity, robot speed, storage and battery,
+  and the other force-wide bonuses, by their Lua API names;
+- `recipe_productivity`: per-recipe productivity from research, where non-zero;
+- `ammo_damage`, `gun_speed`, `turret_attack`: combat modifiers, where non-zero.
+
+A bonus the running game version does not have is left out rather than failing
+the export.
+
 ### The region selector, and `/forge-region <x1> <y1> <x2> <y2> [name]`
 
 Exports a rectangle of the map as a blueprint string, written to
