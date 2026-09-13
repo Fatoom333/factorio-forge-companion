@@ -28,9 +28,114 @@ local function write(name, payload, player)
     return path
 end
 
+--- Force-wide bonuses, by the attribute names the game gives them.
+---
+--- The bonus screen shows these as sums; the force holds the sums. Reading them
+--- here rather than adding up technology effects outside matters, because the
+--- effects come from more places than the research tree -- the bulk inserter
+--- technology itself raises bulk inserter capacity, mods and scripts set them
+--- directly -- and the force is where they all end up.
+---
+--- Each is read through a pcall: an attribute this game version does not have
+--- raises rather than returning nil, and one missing bonus must not cost the
+--- whole export.
+local FORCE_BONUSES = {
+    "inserter_stack_size_bonus",
+    "bulk_inserter_capacity_bonus",
+    "belt_stack_size_bonus",
+    "mining_drill_productivity_bonus",
+    "laboratory_speed_modifier",
+    "laboratory_productivity_bonus",
+    "beacon_distribution_modifier",
+    "worker_robots_speed_modifier",
+    "worker_robots_storage_bonus",
+    "worker_robots_battery_modifier",
+    "following_robots_lifetime_modifier",
+    "maximum_following_robot_count",
+    "train_braking_force_bonus",
+    "artillery_range_modifier",
+    "manual_mining_speed_modifier",
+    "manual_crafting_speed_modifier",
+    "character_running_speed_modifier",
+    "character_inventory_slots_bonus",
+    "character_trash_slot_count",
+    "character_health_bonus",
+    "character_reach_distance_bonus",
+    "character_build_distance_bonus",
+    "cargo_landing_pad_limit",
+    "deconstruction_time_to_live",
+}
+
+local function read(object, key)
+    local ok, value = pcall(function()
+        return object[key]
+    end)
+    if ok then
+        return value
+    end
+    return nil
+end
+
+local function export_bonuses(force)
+    local bonuses = {}
+    for _, name in pairs(FORCE_BONUSES) do
+        local value = read(force, name)
+        if type(value) == "number" then
+            bonuses[name] = value
+        end
+    end
+
+    -- Per-category combat modifiers, only where research has moved them off
+    -- zero: every category at zero says nothing a missing entry does not.
+    local ammo_damage, gun_speed = {}, {}
+    for name in pairs(prototypes.ammo_category) do
+        local ok, damage = pcall(function()
+            return force.get_ammo_damage_modifier(name)
+        end)
+        if ok and damage ~= 0 then
+            ammo_damage[name] = damage
+        end
+        local ok_speed, speed = pcall(function()
+            return force.get_gun_speed_modifier(name)
+        end)
+        if ok_speed and speed ~= 0 then
+            gun_speed[name] = speed
+        end
+    end
+    local turret_attack = {}
+    for name in pairs(prototypes.get_entity_filtered({ { filter = "turret" } })) do
+        local ok, attack = pcall(function()
+            return force.get_turret_attack_modifier(name)
+        end)
+        if ok and attack ~= 0 then
+            turret_attack[name] = attack
+        end
+    end
+
+    -- Productivity researched into individual recipes (2.0: steel, plastic,
+    -- rocket parts and whatever mods add). Changes how much of every
+    -- ingredient a product costs, so the bill of materials needs it.
+    local recipe_productivity = {}
+    for name, recipe in pairs(force.recipes) do
+        local value = read(recipe, "productivity_bonus")
+        if type(value) == "number" and value ~= 0 then
+            recipe_productivity[name] = value
+        end
+    end
+
+    return {
+        force = bonuses,
+        ammo_damage = ammo_damage,
+        gun_speed = gun_speed,
+        turret_attack = turret_attack,
+        recipe_productivity = recipe_productivity,
+    }
+end
+
 --- Everything the data stage cannot tell you, because it is state rather than
 --- definition: which mods are loaded at which versions, what their startup
---- settings were set to, and what this force has researched.
+--- settings were set to, what this force has researched, and the bonuses that
+--- research and everything else have added up to.
 ---
 --- The mod list is also readable from a save's header from outside, but the
 --- settings are not, and they change recipes. That gap is why this exists.
@@ -77,6 +182,7 @@ local function export_environment(player)
         researched = researched,
         available_to_research = pending,
         recipes_enabled = recipes_enabled,
+        bonuses = export_bonuses(force),
         counts = {
             mods = table_size(mods),
             researched = #researched,
