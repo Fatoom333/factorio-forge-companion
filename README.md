@@ -8,8 +8,10 @@ known from inside the running game.
 Companion to [factorio-forge](https://github.com/Fatoom333/factorio-forge), and
 useful on its own if you want any of the four things below.
 
-> **Status: early.** Written, not yet exercised in a real game. Expect rough
-> edges until it has been.
+> **Status: 0.7.0.** Every command and the window have been exercised in real
+> saves with large mod sets, and the 0.7.0 export has been run in one. What
+> changed in each version is in [changelog.txt](changelog.txt), which the game
+> also shows on the mod's Changelog tab.
 
 ## Why it exists
 
@@ -39,7 +41,7 @@ exists.
 
 Since 0.7.0 it also writes `bonuses`, the sums the in-game bonus screen shows,
 read from the force rather than added up from technologies (some come from
-elsewhere -- the bulk inserter technology itself raises bulk inserter capacity):
+elsewhere — the bulk inserter technology itself raises bulk inserter capacity):
 
 - `force`: inserter and bulk inserter capacity, belt stack size, mining
   productivity, lab speed and productivity, robot speed, storage and battery,
@@ -158,14 +160,27 @@ holds the state before any of it. Cancel does nothing at all.
 The commands remain what a script calls, and the window is only another way to
 reach them.
 
+## Installing
+
+Take `factorio-forge-companion_<version>.zip` from
+[Releases](https://github.com/Fatoom333/factorio-forge-companion/releases), put
+it in your Factorio `mods` folder without unpacking it, and enable the mod in
+the in-game mod list. The file name matters: Factorio checks it against the
+name inside, character for character.
+
 ## Building
 
 ```powershell
 .\tools\build.ps1
 ```
 
-Produces `dist/factorio-forge-companion_<version>.zip`. Copy that into your
-Factorio `mods` folder and enable it in the in-game mod list.
+Produces `dist/factorio-forge-companion_<version>.zip`, with `changelog.txt`
+inside it. Copy that into your Factorio `mods` folder and enable it in the
+in-game mod list.
+
+`tools/lint.py` checks what can be checked without the game: Lua syntax,
+functions defined twice, and locale keys matching between the two languages.
+It needs `lupa`.
 
 The script only builds; it does not install. It wraps the files in the folder
 Factorio expects inside the archive — `<name>_<version>/` with `info.json` at
@@ -205,7 +220,9 @@ rather than accumulates.
 
 All of it is done: an area dragged instead of coordinates typed, a window in
 place of four console commands, and a game speed that comes back after a run
-was interrupted. [ROADMAP.md](ROADMAP.md) keeps the record and what it cost.
+was interrupted. Since then 0.7.0 has added the bonuses to the export, because
+factorio-forge needed them and could not read them on its own.
+[ROADMAP.md](ROADMAP.md) keeps the record and what it cost.
 
 ## Licence
 

@@ -38,6 +38,18 @@ library blueprint is a record, which is not an item and has neither
 `export_stack` nor `label`. Its entities can still be read, and the entities
 are the blueprint.
 
+## Bonuses in the export — 0.7.0
+
+Not on the first roadmap, and the kind of item the section below asks for:
+factorio-forge needed inserter hand size and recipe productivity, and could not
+get them from outside. `/forge-export` now writes the bonuses the in-game bonus
+screen shows.
+
+They are read from the force rather than added up from technologies, because
+the technologies are not the only source: in 2.0 the bulk inserter technology
+itself raises bulk inserter capacity, and mods and scripts set bonuses
+directly. The force is where all of them end up.
+
 ## Nothing is planned beyond this
 
 The commands and the window cover what the tool needs from inside the game. New

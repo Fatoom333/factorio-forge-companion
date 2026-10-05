@@ -1,0 +1,179 @@
+---------------------------------------------------------------------------------------------------
+Version: 0.7.0
+Date: 06. 10. 2026
+  Features:
+    - /forge-export writes a "bonuses" section into environment.json: the force-wide sums the
+      in-game bonus screen shows (inserter and bulk inserter capacity, belt stack size, mining and
+      lab productivity, robot speed, storage and battery, and the rest) by their Lua API names.
+    - Per-recipe productivity from research, and per-category ammo damage, gun speed and turret
+      attack modifiers, where non-zero.
+  Info:
+    - Bonuses are read from the force rather than summed from technologies, because not all of
+      them come from research: the bulk inserter technology itself raises bulk inserter capacity.
+    - A bonus the running game version does not have is left out instead of failing the export.
+    - Added this changelog.
+---------------------------------------------------------------------------------------------------
+Version: 0.6.0
+Date: 08. 09. 2026
+  Features:
+    - The window asks before a long circuit run, with the same figures as the console: ticks,
+      game time, speed, and that an autosave is written first. Cancel does nothing at all.
+  Changes:
+    - The autosave is written a tick before the run begins, so it holds the state before the run.
+---------------------------------------------------------------------------------------------------
+Version: 0.5.7
+Date: 08. 09. 2026
+  Bugfixes:
+    - A library blueprint is rebuilt from its entities even when it has no label or grid snapping.
+---------------------------------------------------------------------------------------------------
+Version: 0.5.6
+Date: 08. 09. 2026
+  Bugfixes:
+    - A library blueprint in the cursor was reported as absent because of a property check.
+---------------------------------------------------------------------------------------------------
+Version: 0.5.5
+Date: 08. 09. 2026
+  Bugfixes:
+    - A library blueprint that will not export itself is read by rebuilding it from its entities.
+---------------------------------------------------------------------------------------------------
+Version: 0.5.4
+Date: 08. 09. 2026
+  Gui:
+    - The window says what the cursor actually holds, and refreshes twice a second while open.
+---------------------------------------------------------------------------------------------------
+Version: 0.5.3
+Date: 08. 09. 2026
+  Gui:
+    - The window reads a blueprint held from the library, not only one from the inventory.
+---------------------------------------------------------------------------------------------------
+Version: 0.5.2
+Date: 08. 09. 2026
+  Bugfixes:
+    - Opening the window crashed looking for a button in the wrong place; elements are now found
+      by name.
+  Gui:
+    - The window sits where other mods put theirs.
+---------------------------------------------------------------------------------------------------
+Version: 0.5.0
+Date: 08. 09. 2026
+  Features:
+    - A window, opened from the button row mods share at the top left, with the same work as the
+      commands. The blueprint comes from the cursor.
+---------------------------------------------------------------------------------------------------
+Version: 0.4.1
+Date: 08. 09. 2026
+  Features:
+    - /forge-clean stops a circuit run that is still going. Nothing is written.
+---------------------------------------------------------------------------------------------------
+Version: 0.4.0
+Date: 08. 09. 2026
+  Bugfixes:
+    - The game speed is restored after a circuit run that was interrupted, on the first tick after
+      a load or by /forge-clean.
+    - /forge-verify really builds what it reports as placed.
+---------------------------------------------------------------------------------------------------
+Version: 0.3.2
+Date: 08. 09. 2026
+  Bugfixes:
+    - Underground neighbours are read in every shape the game hands them over.
+---------------------------------------------------------------------------------------------------
+Version: 0.3.1
+Date: 08. 09. 2026
+  Features:
+    - The region export writes <name>-underground.json: every underground belt and pipe with the
+      partner the game names.
+---------------------------------------------------------------------------------------------------
+Version: 0.3.0
+Date: 08. 09. 2026
+  Features:
+    - Region selector: a shortcut hands over a selection tool, and a dragged rectangle is exported
+      as a blueprint. Alt-drag leaves the tiles out.
+---------------------------------------------------------------------------------------------------
+Version: 0.2.3
+Date: 08. 09. 2026
+  Info:
+    - Numbers and names shared between files live in constants.lua. Nothing behavioural.
+---------------------------------------------------------------------------------------------------
+Version: 0.2.2
+Date: 08. 09. 2026
+  Features:
+    - A long circuit run writes an autosave named _autosave-forge, which the game's own rotation
+      never uses.
+---------------------------------------------------------------------------------------------------
+Version: 0.2.1
+Date: 08. 09. 2026
+  Changes:
+    - The advice to save comes first in the long-run warning.
+---------------------------------------------------------------------------------------------------
+Version: 0.2.0
+Date: 08. 09. 2026
+  Features:
+    - Circuit run speed is a mod setting.
+    - Runs longer than ten seconds of game time say what they cost and wait for the command again.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.12
+Date: 08. 09. 2026
+  Bugfixes:
+    - The circuit recording used an old duplicate function; the new frame format takes effect.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.11
+Date: 08. 09. 2026
+  Changes:
+    - Circuit recording writes networks per tick and the wiring once, with diagnostics at the end.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.10
+Date: 08. 09. 2026
+  Bugfixes:
+    - Scratch-surface pole spacing comes from the mod's own constants; the energy source produces.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.9
+Date: 08. 09. 2026
+  Bugfixes:
+    - Stopped reading prototype properties that the prototype does not have.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.8
+Date: 08. 09. 2026
+  Changes:
+    - The scratch surface is powered by the mod's own invisible poles only.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.7
+Date: 08. 09. 2026
+  Bugfixes:
+    - Survive pole prototypes from other mods that raise on supply_area_distance.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.6
+Date: 08. 09. 2026
+  Features:
+    - The mod brings its own invisible pole and energy source to power the scratch surface.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.5
+Date: 08. 09. 2026
+  Bugfixes:
+    - The recorded circuit gets a real power network.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.4
+Date: 08. 09. 2026
+  Features:
+    - A circuit recording includes the game's own status for every built entity.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.3
+Date: 08. 09. 2026
+  Bugfixes:
+    - The circuit being recorded is powered, so combinators compute.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.2
+Date: 08. 09. 2026
+  Changes:
+    - The scratch surface is deleted after use rather than emptied, so the save does not grow.
+  Features:
+    - /forge-clean removes a scratch surface an interrupted command left behind.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.1
+Date: 08. 09. 2026
+  Bugfixes:
+    - Chunks are generated before building on the scratch surface; /forge-verify placed nothing.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.0
+Date: 08. 09. 2026
+  Major Features:
+    - First version: /forge-export, /forge-region, /forge-verify and /forge-circuit.

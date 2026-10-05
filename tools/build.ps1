@@ -20,9 +20,11 @@ if (Test-Path $archive) { Remove-Item $archive -Force }
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
 
 # Only what the game reads. The repository's own files -- git config, this
-# script -- have no business inside a mod.
+# script -- have no business inside a mod. changelog.txt is read too: the game
+# shows it on the mod's Changelog tab, and the mod portal takes it from the zip.
 $contents = @(
     "info.json",
+    "changelog.txt",
     "control.lua",
     "data.lua",
     "gui.lua",
