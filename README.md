@@ -199,7 +199,7 @@ it by really building it) with no game window and no player, on a throwaway
 copy of a save:
 
 ```powershell
-.	ools\headless-run.ps1 -Save Vulkan-Start.zip -Out out `
+.\tools\headless-run.ps1 -Save my-save.zip -Out out `
     -Blueprint line.txt   # a file holding one blueprint string; optional
 ```
 
@@ -211,15 +211,22 @@ random numbers, RCON password made per run and never printed), runs
 `verify.json` to `-Out`, quits the server, deletes the temporary folder, and
 checks that the real saves, `mod-list.json` and `mod-settings.dat` are
 byte-identical to before. Nothing is written to the game's install folder or
-its real data folder, and nothing is downloaded.
+its real data folder, and nothing is downloaded. One limit: the RCON password
+travels on the server's command line (`config.ini` keys are ignored by
+`--start-server`), so for the length of the run a process of the same Windows
+user could read it; it is random per run and the port is loopback only.
 
 `-DataDir` names the real data folder (default `%APPDATA%\Factorio`),
 `-Factorio` the executable (found in the usual Steam places otherwise),
 `-ModZip` a freshly built companion to use instead of the installed one.
 
 What the commands need. `/forge-export` and `/forge-verify` run with no player
-(after this change; before it, `game.get_player(nil)` raised and a headless server
-stops on any error in a command). `/forge-region`, `/forge-circuit` and
+(from companion 0.7.1; in 0.7.0 `game.get_player(nil)` raised, and a headless
+server stops on any error in a command). The script reads the version of the
+mod it is about to use and stops with a message if it is older than 0.7.1: with
+a 0.7.0 install, pass a fresh build with `-ModZip`. A refusal ("not a blueprint")
+is sent back over RCON and ends the run at once. Exit codes: 0 done, 1 failed,
+2 Factorio was already running (nothing was started). `/forge-region`, `/forge-circuit` and
 `/forge-clean` need a player's surface and force, so at the console they now do
 nothing rather than stop the server. One RCON packet carried a 59 KB blueprint
 without trouble. On the Windows Steam build the process does not exit after

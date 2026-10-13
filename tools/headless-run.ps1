@@ -1,7 +1,7 @@
 # Run Factorio without a window, on a copy of a save, and collect what the
 # companion mod writes.
 #
-#   headless-run.ps1 -Save Vulkan-Start.zip -Out out [-Blueprint line.txt]
+#   headless-run.ps1 -Save my-save.zip -Out out [-Blueprint line.txt]
 #
 # What it does, in order:
 #   1. refuses to start if Factorio is already running;
@@ -9,16 +9,22 @@
 #      save, a copy of ONLY the enabled mods, the settings file) -- the game
 #      is told to use that folder for everything it writes;
 #   3. starts `factorio --start-server` on the copy, bound to 127.0.0.1;
-#   4. waits until the world is up, types `/forge-export` (and `/forge-verify`
-#      when a blueprint is given) into the server's console, and waits for the
-#      result files;
+#   4. waits until the world is up, sends `/forge-export` (and `/forge-verify`
+#      when a blueprint is given) over RCON, and waits for the result files;
 #   5. copies them to -Out, asks the server to quit, and kills it if it does not;
 #   6. checks that the real save, mod list and mod settings did not change.
 #
 # Nothing is written into the game's install folder or its real data folder, and
-# nothing is downloaded or installed. The commands go in through the server's
-# standard input, not through RCON, so no password exists and the only network
-# port is a random one on the loopback address.
+# nothing is downloaded or installed. The commands go in over RCON on
+# 127.0.0.1. The password is made fresh for each run, is never printed and sits
+# only on the server's command line (Factorio reads RCON settings nowhere else for
+# --start-server), so a local process of the same user could read it meanwhile. Two ports
+# are open on the loopback address (the game's and RCON's, both random) and only
+# while the run lasts.
+#
+# Exit codes: 0 done, 1 failed, 2 Factorio was already running (nothing started).
+# The companion mod must be 0.7.1 or newer (earlier ones stop a server on a
+# command typed at the console); pass -ModZip with a fresh build otherwise.
 
 [CmdletBinding()]
 param(
@@ -44,8 +50,13 @@ $ModName = "factorio-forge-companion"
 
 function Find-Factorio {
     if ($Factorio) { return $Factorio }
-    $roots = @(${env:ProgramFiles(x86)}, $env:ProgramFiles, "D:\Program Files (x86)", "C:\Program Files (x86)") |
-        Where-Object { $_ } | Select-Object -Unique
+    $roots = @(${env:ProgramFiles(x86)}, $env:ProgramFiles)
+    # Steam may live on another drive; it records where.
+    try {
+        $steam = (Get-ItemProperty "HKCU:\Software\Valve\Steam" -ErrorAction Stop).SteamPath
+        if ($steam) { $roots += (Split-Path ($steam -replace '/', '\')) }
+    } catch {}
+    $roots = $roots | Where-Object { $_ } | Select-Object -Unique
     foreach ($root in $roots) {
         $candidate = Join-Path $root "Steam\steamapps\common\Factorio\bin\x64\factorio.exe"
         if (Test-Path $candidate) { return $candidate }
@@ -71,10 +82,13 @@ function Get-Fingerprint([string] $data) {
     return ($lines | Sort-Object) -join "`n"
 }
 
-function Wait-ForFile([string] $path, [datetime] $deadline) {
-    # Present, non-empty and not growing any more.
+function Wait-ForFile([string] $path, [datetime] $deadline, $process, [string] $log) {
+    # Present, non-empty and not growing any more. Gives up at once when the
+    # server has gone or its session has failed or closed: nothing will come.
     $last = -1
     while ((Get-Date) -lt $deadline) {
+        if ($process.HasExited) { return $false }
+        if ((Test-Path $log) -and (Select-String -Path $log -Pattern 'to\((Closed|Failed)\)' -Quiet)) { return $false }
         if (Test-Path $path) {
             $size = (Get-Item $path).Length
             if ($size -gt 0 -and $size -eq $last) { return $true }
@@ -154,7 +168,7 @@ function Invoke-Console([string] $line) {
 }
 
 if (Get-Process factorio -ErrorAction SilentlyContinue) {
-    Write-Error "Factorio is already running; not starting anything. Close it and try again."
+    Write-Host "Factorio is already running; not starting anything. Close it and try again."
     exit 2
 }
 
@@ -192,6 +206,15 @@ try {
         if ($enabled -contains $name) { Copy-Item $dir.FullName "$work\mods\$($dir.Name)" -Recurse; $copied++ }
     }
     if ($ModZip) { Copy-Item $ModZip "$work\mods\" ; $copied++ }
+    # Several versions can sit in the mods folder; the game loads the newest.
+    $versions = @(Get-ChildItem "$work\mods" -Filter "${ModName}_*.zip" | ForEach-Object {
+        if ($_.Name -match '_(\d+)\.(\d+)\.(\d+)\.zip$') { [version]"$($Matches[1]).$($Matches[2]).$($Matches[3])" }
+    })
+    if (-not $versions) { throw "The companion mod ($ModName) is not among the enabled mods; pass -ModZip." }
+    $version = ($versions | Sort-Object -Descending)[0]
+    if ($version -lt [version]"0.7.1") {
+        throw "The companion mod is $version; 0.7.1 or newer is needed (older ones stop a headless server on /forge-export). Pass -ModZip with a fresh build."
+    }
     Copy-Item (Join-Path $realMods "mod-list.json") "$work\mods\"
     $settingsFile = Join-Path $realMods "mod-settings.dat"
     if (Test-Path $settingsFile) { Copy-Item $settingsFile "$work\mods\" }
@@ -201,16 +224,21 @@ try {
 
     $port = Get-Random -Minimum 20000 -Maximum 40000
     $rconPort = Get-Random -Minimum 40001 -Maximum 60000
-    # A password for this run only: never printed, never stored anywhere but
-    # the command line of the one process that needs it.
+    # A password for this run only: never printed, never stored. It has to go on
+    # the command line: the config.ini keys local-rcon-socket/-password are for
+    # servers launched from the menu and --start-server ignores them (tried), so
+    # for the ~20 s of the run a local process of the same user could read it.
     $rng = New-Object Security.Cryptography.RNGCryptoServiceProvider
     $raw = New-Object byte[] 24
     $rng.GetBytes($raw)
     $password = [Convert]::ToBase64String($raw) -replace '[^A-Za-z0-9]', 'x'
     $fwd = $work -replace '\\', '/'
     # read-data is the install's own data folder; write-data is the throwaway one.
-    Set-Content -Path "$work\config.ini" -Encoding ASCII -Value @(
-        "[path]", "read-data=__PATH__system-read-data__", "write-data=$fwd", "[general]", "locale=auto")
+    # UTF-8 without a BOM: the temp path may hold non-ASCII (a Windows user name).
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    $configText = (@("[path]", "read-data=__PATH__system-read-data__", "write-data=$fwd",
+        "[general]", "locale=auto") -join "`n") + "`n"
+    [IO.File]::WriteAllText("$work\config.ini", $configText, $utf8)
     # Nobody should be able to find this server, and it must not pause the game
     # while nobody is connected -- a paused game does not run commands.
     # The game insists on every key being present, so start from the example it
@@ -224,7 +252,7 @@ try {
     $settings.auto_pause = $false
     $settings.autosave_interval = 0
     $settings.max_players = 1
-    $settings | ConvertTo-Json -Depth 10 | Set-Content -Path "$work\server-settings.json" -Encoding ASCII
+    [IO.File]::WriteAllText("$work\server-settings.json", ($settings | ConvertTo-Json -Depth 10), $utf8)
 
     $log = "$work\factorio-current.log"
     $arguments = "--config `"$work\config.ini`" --mod-directory `"$work\mods`" " +
@@ -251,14 +279,21 @@ try {
     $wanted = @()
 
     $answer = Invoke-Console "/forge-export"; Write-Host "export answer: [$answer]"
-    if (-not (Wait-ForFile "$outDir\environment.json" $deadline)) { throw "environment.json did not appear. See log tail." }
+    if (-not (Wait-ForFile "$outDir\environment.json" $deadline $proc $log)) { throw "environment.json did not appear. See log tail." }
     $wanted += "environment.json"
     Write-Host ("export written after {0:N1}s" -f $timer.Elapsed.TotalSeconds)
 
     if ($Blueprint) {
         $text = ((Get-Content $Blueprint -Raw -Encoding UTF8) -replace '\s', '')
         $answer = Invoke-Console "/forge-verify $text"; Write-Host "verify answer: [$answer]"
-        if (-not (Wait-ForFile "$outDir\verify.json" $deadline)) { throw "verify.json did not appear. See log tail." }
+        # The command has finished when RCON answers. If it printed a reply and
+        # no file is there, the reply is the reason (not a blueprint, no
+        # prototypes): do not sit out the whole timeout.
+        $limit = if ($answer) { (Get-Date).AddSeconds(8) } else { $deadline }
+        if (-not (Wait-ForFile "$outDir\verify.json" $limit $proc $log)) {
+            if ($answer) { throw "/forge-verify refused: $answer" }
+            throw "verify.json did not appear. See log tail."
+        }
         $wanted += "verify.json"
         Write-Host ("verify written after {0:N1}s" -f $timer.Elapsed.TotalSeconds)
     }
@@ -275,7 +310,8 @@ catch {
 }
 finally {
     if ($proc -and -not $proc.HasExited) {
-        try { Send-Rcon 2 "/quit" } catch {}
+        $asked = $false
+        try { Send-Rcon 2 "/quit"; $asked = $true } catch {}
         # Say goodbye on the RCON line, then let go of it.
         if ($script:rcon) { try { $script:rcon.Close() } catch {} }
         # `/quit` makes the server save and close its game session (the log says
@@ -283,9 +319,11 @@ finally {
         # build the process then stays alive, idle, and never says Goodbye; so
         # once the session is closed and a few seconds have passed, this run's
         # own process -- by pid, never by name -- is ended.
+        # If /quit never went out (RCON never connected), there is nothing to wait for.
         $quitting = [Diagnostics.Stopwatch]::StartNew()
         $closed = $false
-        while (-not $proc.HasExited -and $quitting.Elapsed.TotalSeconds -lt 40) {
+        $patience = if ($asked) { 40 } else { 0 }
+        while (-not $proc.HasExited -and $quitting.Elapsed.TotalSeconds -lt $patience) {
             if (-not $closed -and (Test-Path $log) -and (Select-String -Path $log -Pattern 'to\((Closed|Failed)\)' -Quiet)) {
                 $closed = $true; $closedAt = $quitting.Elapsed.TotalSeconds
             }
