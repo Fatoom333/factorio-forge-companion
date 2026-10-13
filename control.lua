@@ -15,6 +15,23 @@ local scratch = require("scratch")
 
 local OUTPUT = "factorio-forge/"
 
+--- The player behind a command, or nil when it was typed at a server's console
+--- or sent over RCON, where there is no player at all. `game.get_player` raises
+--- on a nil index, and an error inside a command stops a headless server.
+local function caller(event)
+    if event.player_index then
+        return game.get_player(event.player_index)
+    end
+    return nil
+end
+
+--- Tell a player something, if there is one to tell.
+local function say(player, message)
+    if player then
+        player.print(message)
+    end
+end
+
 --- Write a table as JSON, and tell the player where it went.
 ---@param name string file name within the output folder
 ---@param payload table
@@ -303,7 +320,7 @@ local function verify_blueprint(player, text)
     inventory[1].import_stack(text)
     if not inventory[1].is_blueprint_setup() then
         inventory.destroy()
-        player.print({ "forge.not-a-blueprint" })
+        say(player, { "forge.not-a-blueprint" })
         return
     end
 
@@ -317,7 +334,7 @@ local function verify_blueprint(player, text)
 
     local ghosts = inventory[1].build_blueprint({
         surface = surface,
-        force = player.force,
+        force = player and player.force or game.forces["player"],
         position = origin,
         build_mode = defines.build_mode.forced,
     })
@@ -329,9 +346,13 @@ local function verify_blueprint(player, text)
     -- two ways of failing are reported apart: a prototype the game would not
     -- even ghost is missing from the game, while one that ghosted and would
     -- not revive had nowhere to go.
-    local built, refused = 0, {}
+    --
+    -- A revived ghost is gone and answers to nothing, its name included, so the
+    -- names are written down before any ghost is revived.
+    local built, refused, ghost_names = 0, {}, {}
     for _, ghost in pairs(ghosts) do
         if ghost.valid then
+            ghost_names[#ghost_names + 1] = ghost.name == "entity-ghost" and ghost.ghost_name or ghost.name
             if ghost.name == "entity-ghost" then
                 local name = ghost.ghost_name
                 local _, revived = ghost.revive()
@@ -361,8 +382,7 @@ local function verify_blueprint(player, text)
         for _, entry in pairs(entries) do
             seen[entry.name] = (seen[entry.name] or 0) + 1
         end
-        for _, ghost in pairs(ghosts) do
-            local name = ghost.ghost_name or ghost.name
+        for _, name in pairs(ghost_names) do
             seen[name] = (seen[name] or 0) - 1
         end
         for name, remaining in pairs(seen) do
@@ -374,7 +394,7 @@ local function verify_blueprint(player, text)
 
     inventory.destroy()
     write("verify.json", report, player)
-    player.print({ "forge.verified", report.placed, report.expected })
+    say(player, { "forge.verified", report.placed, report.expected })
 
     -- The answer has been read, so the surface has served its purpose and
     -- leaves nothing behind in the save.
@@ -382,12 +402,15 @@ local function verify_blueprint(player, text)
 end
 
 commands.add_command("forge-export", { "forge.cmd-export" }, function(event)
-    local player = game.get_player(event.player_index)
+    local player = caller(event)
     export_environment(player)
 end)
 
 commands.add_command("forge-region", { "forge.cmd-region" }, function(event)
-    local player = game.get_player(event.player_index)
+    local player = caller(event)
+    if not player then
+        return -- needs a player's surface and force; the console has neither
+    end
     local words = {}
     for word in string.gmatch(event.parameter or "", "%S+") do
         words[#words + 1] = word
@@ -411,9 +434,9 @@ commands.add_command("forge-region", { "forge.cmd-region" }, function(event)
 end)
 
 commands.add_command("forge-verify", { "forge.cmd-verify" }, function(event)
-    local player = game.get_player(event.player_index)
+    local player = caller(event)
     if not event.parameter or event.parameter == "" then
-        player.print({ "forge.verify-usage" })
+        say(player, { "forge.verify-usage" })
         return
     end
     verify_blueprint(player, event.parameter)
@@ -456,7 +479,10 @@ local function confirmed(player, parameter, ticks)
 end
 
 commands.add_command("forge-circuit", { "forge.cmd-circuit" }, function(event)
-    local player = game.get_player(event.player_index)
+    local player = caller(event)
+    if not player then
+        return -- needs a player's surface and force; the console has neither
+    end
     local ticks, text = string.match(event.parameter or "", "^(%d+)%s+(.+)$")
     if not ticks then
         player.print({ "forge.circuit-usage" })
@@ -469,7 +495,10 @@ commands.add_command("forge-circuit", { "forge.cmd-circuit" }, function(event)
 end)
 
 commands.add_command("forge-clean", { "forge.cmd-clean" }, function(event)
-    local player = game.get_player(event.player_index)
+    local player = caller(event)
+    if not player then
+        return -- needs a player's surface and force; the console has neither
+    end
     local aborted = circuit.abort()
     if aborted then
         player.print({ "forge.run-aborted", aborted })
