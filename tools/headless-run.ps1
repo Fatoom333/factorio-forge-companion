@@ -286,7 +286,7 @@ finally {
         $quitting = [Diagnostics.Stopwatch]::StartNew()
         $closed = $false
         while (-not $proc.HasExited -and $quitting.Elapsed.TotalSeconds -lt 40) {
-            if (-not $closed -and (Test-Path $log) -and (Select-String -Path $log -Pattern 'to\(Closed\)' -Quiet)) {
+            if (-not $closed -and (Test-Path $log) -and (Select-String -Path $log -Pattern 'to\((Closed|Failed)\)' -Quiet)) {
                 $closed = $true; $closedAt = $quitting.Elapsed.TotalSeconds
             }
             if ($closed -and ($quitting.Elapsed.TotalSeconds - $closedAt) -gt 5) { break }
