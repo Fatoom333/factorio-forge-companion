@@ -192,6 +192,47 @@ its root — which is the usual reason a hand-made mod zip refuses to load.
 > entries but every file inside failed to open, so the game found the mod and
 > could not read a line of it. Rebuilding the zip works regardless.
 
+## Running without a window
+
+`tools/headless-run.ps1` takes a fresh export (and, given a blueprint, checks
+it by really building it) with no game window and no player, on a throwaway
+copy of a save:
+
+```powershell
+.\tools\headless-run.ps1 -Save my-save.zip -Out out `
+    -Blueprint line.txt   # a file holding one blueprint string; optional
+```
+
+It refuses to start while Factorio is running, builds a temporary folder with
+its own `config.ini`, a copy of the save and a copy of only the enabled mods,
+starts `factorio --start-server` there (game and RCON ports on 127.0.0.1, at
+random numbers, RCON password made per run and never printed), runs
+`/forge-export` and `/forge-verify` over RCON, copies `environment.json` and
+`verify.json` to `-Out`, quits the server, deletes the temporary folder, and
+checks that the real saves, `mod-list.json` and `mod-settings.dat` are
+byte-identical to before. Nothing is written to the game's install folder or
+its real data folder, and nothing is downloaded. One limit: the RCON password
+travels on the server's command line (`config.ini` keys are ignored by
+`--start-server`), so for the length of the run a process of the same Windows
+user could read it; it is random per run and the port is loopback only.
+
+`-DataDir` names the real data folder (default `%APPDATA%\Factorio`),
+`-Factorio` the executable (found in the usual Steam places otherwise),
+`-ModZip` a freshly built companion to use instead of the installed one.
+
+What the commands need. `/forge-export` and `/forge-verify` run with no player
+(from companion 0.7.1; in 0.7.0 `game.get_player(nil)` raised, and a headless
+server stops on any error in a command). The script reads the version of the
+mod it is about to use and stops with a message if it is older than 0.7.1: with
+a 0.7.0 install, pass a fresh build with `-ModZip`. A refusal ("not a blueprint")
+is sent back over RCON and ends the run at once. Exit codes: 0 done, 1 failed,
+2 Factorio was already running (nothing was started). `/forge-region`, `/forge-circuit` and
+`/forge-clean` need a player's surface and force, so at the console they now do
+nothing rather than stop the server. One RCON packet carried a 59 KB blueprint
+without trouble. On the Windows Steam build the process does not exit after
+`/quit` (the game session closes and the log says so, then the process sits
+idle); the script ends its own process by pid a few seconds after that.
+
 ## A note on scope
 
 This mod only reads and writes files. It changes no recipes and touches

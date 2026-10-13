@@ -1,4 +1,18 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.7.1
+Date: 13. 10. 2026
+  Bugfixes:
+    - /forge-export and /forge-verify no longer stop a server when typed at its console or sent
+      over RCON, where there is no player; /forge-region, /forge-circuit and /forge-clean do
+      nothing there instead of failing.
+    - /forge-verify no longer fails when some of the blueprint's prototypes could not be ghosted:
+      the names of the ghosts are read before any of them is revived.
+    - /forge-verify on a string that is not a blueprint says so instead of raising an error (which
+      stopped a headless server).
+  Info:
+    - Over RCON the replies of /forge-verify (not a blueprint, verified N of M) come back to the
+      sender.
+---------------------------------------------------------------------------------------------------
 Version: 0.7.0
 Date: 06. 10. 2026
   Features:
