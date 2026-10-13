@@ -25,10 +25,14 @@ local function caller(event)
     return nil
 end
 
---- Tell a player something, if there is one to tell.
+--- Tell a player something, if there is one to tell. A command sent over RCON
+--- has no player, but `rcon` is set and carries the answer back to the sender;
+--- typed at a server's console, neither exists and the message is dropped.
 local function say(player, message)
     if player then
         player.print(message)
+    elseif rcon then
+        rcon.print(message)
     end
 end
 
@@ -317,8 +321,11 @@ end
 --- model of it: anything that will not place, does not place here either.
 local function verify_blueprint(player, text)
     local inventory = game.create_inventory(1)
-    inventory[1].import_stack(text)
-    if not inventory[1].is_blueprint_setup() then
+    -- A string that is not a blueprint leaves the stack empty, and asking an
+    -- empty stack whether it is set up raises, which stops a headless server.
+    local failed = inventory[1].import_stack(text) == 1
+    local stack = inventory[1]
+    if failed or not stack.valid_for_read or not stack.is_blueprint or not stack.is_blueprint_setup() then
         inventory.destroy()
         say(player, { "forge.not-a-blueprint" })
         return
