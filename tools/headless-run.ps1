@@ -250,7 +250,9 @@ try {
     if ($UseModList) {
         $list = Get-Content (Join-Path $realMods "mod-list.json") -Raw -Encoding UTF8 | ConvertFrom-Json
         $listEntries = @($list.mods | ForEach-Object { [pscustomobject]@{ name = $_.name; enabled = [bool]$_.enabled } })
-        $modsNeeded = @($list.mods | Where-Object { $_.enabled } | ForEach-Object { [pscustomobject]@{ name = $_.name; version = $null } })
+        # Built-in mods (base, space-age, ...) have no file in the mods folder.
+        $modsNeeded = @($list.mods | Where-Object { $_.enabled -and -not (Test-Path (Join-Path $builtIn "$($_.name)\info.json")) } |
+            ForEach-Object { [pscustomobject]@{ name = $_.name; version = $null } })
         Write-Host "mod set: the player's mod-list.json ($($modsNeeded.Count) enabled)"
     }
     else {
@@ -285,7 +287,11 @@ try {
         $found = @(Get-ChildItem $realMods | Where-Object {
             ($_.PSIsContainer -and $_.Name -match "^$([regex]::Escape($name))_\d+\.\d+\.\d+$") -or
             (-not $_.PSIsContainer -and $_.Name -match "^$([regex]::Escape($name))_\d+\.\d+\.\d+\.zip$") })
-        if (-not $found) { throw "Mod '$name' is not in the mods folder ($realMods)." }
+        if (-not $found) {
+            # The player's list names mods that are not installed; the old behaviour skipped them.
+            if ($UseModList) { $usedLines += "$name (listed, but not in the mods folder: skipped)"; continue }
+            throw "Mod '$name' is not in the mods folder ($realMods)."
+        }
         $exact = $null
         if ($want.version) { $exact = $found | Where-Object { (Get-ModVersion $_.Name) -eq $want.version } | Select-Object -First 1 }
         if ($exact) { $pick = $exact; $usedLines += "$name $($want.version)" }
