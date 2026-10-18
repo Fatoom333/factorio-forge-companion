@@ -10,7 +10,14 @@ Date: 18. 10. 2026
       the share of the window spent working, waiting for an ingredient (and which), blocked on a full
       output, or without power.
     - tools/headless-run.ps1 -Measure <spec file> runs it in a game without a window.
+    - With "lanes": true in the spec, every output also reports what arrived on its left and on its
+      right lane (outputs[].lanes, per second, seen along the output belt's own direction; odd
+      transport lines are left, even ones right, so an underground exit or a splitter works too). A
+      lane that carried nothing is left out, and so is the field when neither did.
   Changes:
+    - A "lanes" that is not true or false is refused before anything is created.
+    - tools/headless-run.ps1 says when the server's exit code comes from ending the idle process
+      itself, instead of a bare -1.
     - /forge-clean also stops a measurement and removes its surface; a spec with an unknown fluid
       or item, a missing position, a bad direction or an impossible length is refused before anything
       is created, and a run that fails halfway puts the recipes and game speed back.

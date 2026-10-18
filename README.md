@@ -150,7 +150,7 @@ sends one, see below):
 `at` is a tile in the blueprint's own coordinates (the ones the factorio-forge
 plan and report use). Optional: `speed` (game speed during the run, up to 100),
 `direction` on an output (the way a belt the run has to add flows),
-`temperature` on a fluid source, `id` anywhere. `targets` are only passed
+`temperature` on a fluid source, `id` anywhere, `"lanes": true` (see Sinks). `targets` are only passed
 through for the reader of the result.
 
 What the run does, and what it uses:
@@ -176,7 +176,11 @@ What the run does, and what it uses:
   source's tile, one is added.
 - **Sinks.** At each output the belt is emptied every tick and what was taken is
   counted by item (`outputs[].delivered`, per second). If there is no belt at an
-  output's tile, one is added.
+  output's tile, one is added. With `"lanes": true` each output also gets
+  `lanes`: the same counts split into `left` and `right`, seen along the output
+  belt's own direction (a lane that carried nothing is left out; if neither
+  carried anything the field is absent). Works on any belt-type output,
+  including an underground exit or a splitter.
 - **Window.** `warmup_s` seconds, then `measure_s` seconds counted. Production
   and consumption per second (`produced`, `consumed`, and the `fluids_` pair) are
   the force's production statistics for the measuring surface between the start
