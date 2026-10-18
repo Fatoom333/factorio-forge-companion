@@ -324,10 +324,8 @@ local function validate(spec)
         check_point(label, output.at)
         check_direction(label, output.direction)
     end
-    for _, field in pairs({ "lanes", "tanks" }) do
-        if spec[field] ~= nil and type(spec[field]) ~= "boolean" then
-            error(field .. " must be true or false")
-        end
+    if spec.lanes ~= nil and type(spec.lanes) ~= "boolean" then
+        error("lanes must be true or false")
     end
 end
 
@@ -542,7 +540,6 @@ local function prepare(player, spec, m)
         machines = machines,
         problems = problems,
         lanes = spec.lanes == true,
-        tanks = spec.tanks == true,
         warmup = warmup,
         measure = measure,
         ticks = 0,
@@ -626,8 +623,10 @@ local function drain(m)
                 for _, content in pairs(line.get_contents()) do
                     local removed = line.remove_item({ name = content.name, count = content.count, quality = content.quality })
                     if removed > 0 then
-                        local lane = sink.lanes[index]
-                        if lane then lane[content.name] = (lane[content.name] or 0) + removed end
+                        -- Odd transport lines are the left lane, even ones the right, on every
+                        -- belt type (a transport belt has 2 lines, an underground 4, a splitter 8).
+                        local lane = sink.lanes[(index - 1) % 2 + 1]
+                        lane[content.name] = (lane[content.name] or 0) + removed
                         sink.taken[content.name] = (sink.taken[content.name] or 0) + removed
                     end
                 end
@@ -702,10 +701,10 @@ local function finish(m)
         local per_lane
         if m.lanes then
             -- Line 1 is the left lane and line 2 the right, seen along the belt's own direction.
-            -- A lane that carried nothing is left out.
-            per_lane = {}
+            -- A lane that carried nothing is left out; if neither did, the field is left out.
             for index, side in ipairs({ "left", "right" }) do
                 for name, count in pairs(sink.lanes[index]) do
+                    per_lane = per_lane or {}
                     per_lane[side] = per_lane[side] or {}
                     per_lane[side][name] = count / seconds
                 end
@@ -753,24 +752,8 @@ local function finish(m)
             other = machine.other, products_finished = finished }
     end
 
-    -- Storage tanks, when asked: what they hold at the end of the run. The
-    -- capacity is the prototype's own volume, not the fluidbox's, which also
-    -- counts every pipe connected to the tank.
-    local tanks
-    if m.tanks and m.surface and m.surface.valid then
-        tanks = {}
-        for _, entity in pairs(m.surface.find_entities_filtered({ type = "storage-tank" })) do
-            local fluid = entity.fluidbox[1]
-            tanks[#tanks + 1] = {
-                name = entity.name,
-                x = entity.position.x - m.anchor.x, y = entity.position.y - m.anchor.y,
-                capacity = entity.prototype.fluid_capacity,
-                fluid = fluid and fluid.name, amount = fluid and fluid.amount }
-        end
-    end
     write_result({
         ok = true,
-        tanks = tanks,
         surface = m.surface_report,
         anchor = { x = m.anchor.x, y = m.anchor.y, matched = m.anchor.matched },
         placed = m.placed,
