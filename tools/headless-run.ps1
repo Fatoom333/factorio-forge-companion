@@ -1,18 +1,29 @@
 # Run Factorio without a window, on a copy of a save, and collect what the
 # companion mod writes.
 #
-#   headless-run.ps1 -Save my-save.zip -Out out [-Blueprint line.txt]
+#   headless-run.ps1 -Save my-save.zip -Out out [-Blueprint line.txt] [-Measure spec.json]
 #
 # What it does, in order:
 #   1. refuses to start if Factorio is already running;
 #   2. builds a throwaway folder (config.ini, server-settings.json, a copy of the
-#      save, a copy of ONLY the enabled mods, the settings file) -- the game
-#      is told to use that folder for everything it writes;
+#      save, a copy of ONLY the mods the save was made with, a mod-list.json
+#      written for them, the settings file) -- the game is told to use that
+#      folder for everything it writes;
 #   3. starts `factorio --start-server` on the copy, bound to 127.0.0.1;
 #   4. waits until the world is up, sends `/forge-export` (and `/forge-verify`
-#      when a blueprint is given) over RCON, and waits for the result files;
+#      when a blueprint is given, `/forge-measure` when a spec is given) over RCON,
+#      and waits for the result files;
 #   5. copies them to -Out, asks the server to quit, and kills it if it does not;
 #   6. checks that the real save, mod list and mod settings did not change.
+#
+# The mod set is the SAVE's own, read from the save file by factorio-forge (so a
+# mod another project enabled in the player's mod-list.json does not leak in):
+# each mod at the version the save names when that file is in the mods folder,
+# else the newest one there, and the run says which. -UseModList takes the
+# player's mod-list.json instead. The companion mod is always added.
+#
+# -Measure builds a blueprint on an empty surface and measures what it makes;
+# see the README ("/forge-measure") for the spec and the result.
 #
 # Nothing is written into the game's install folder or its real data folder, and
 # nothing is downloaded or installed. The commands go in over RCON on
@@ -34,6 +45,14 @@ param(
     [Parameter(Mandatory = $true)] [string] $Out,
     # A file holding one blueprint string; when given, /forge-verify is run on it.
     [string] $Blueprint,
+    # A measuring spec (JSON, see README); when given, /forge-measure is run on it
+    # and measure.json is copied to -Out. The spec may carry "speed" (game speed).
+    [string] $Measure,
+    # Take the mods from the player's mod-list.json instead of from the save.
+    [switch] $UseModList,
+    # A python that can import factorio_forge (reads the save's mod list);
+    # default: $env:FACTORIO_FORGE_PYTHON, else python / py.
+    [string] $ForgePython,
     # The game's real data folder (saves, mods, mod-list.json live there).
     [string] $DataDir = (Join-Path $env:APPDATA "Factorio"),
     # factorio.exe; found in the usual Steam places when not given.
@@ -97,6 +116,40 @@ function Wait-ForFile([string] $path, [datetime] $deadline, $process, [string] $
         Start-Sleep -Milliseconds 700
     }
     return $false
+}
+
+function Get-ModVersion([string] $fileName) {
+    if ($fileName -match '_(\d+)\.(\d+)\.(\d+)(\.zip)?$') { return [version]"$($Matches[1]).$($Matches[2]).$($Matches[3])" }
+    return $null
+}
+
+# The mods the save was made with, asked of factorio-forge, which reads them
+# from the save's own header.
+function Get-SaveMods([string] $savePath, [string] $scratch) {
+    $ErrorActionPreference = "Continue"   # a python that fails must not stop the run before the next is tried
+    $candidates = @()
+    if ($ForgePython) { $candidates += $ForgePython }
+    if ($env:FACTORIO_FORGE_PYTHON) { $candidates += $env:FACTORIO_FORGE_PYTHON }
+    $candidates += @("python", "py")
+    $script = Join-Path $scratch "save-mods.py"
+    $body = @(
+        "import json, sys",
+        "from pathlib import Path",
+        "from factorio_forge.save import read_save_info",
+        "info = read_save_info(Path(sys.argv[1]))",
+        "print(json.dumps({'game': info.game_version_string, 'mods': [[m.name, m.version_string] for m in info.mods]}))"
+    ) -join "`n"
+    [IO.File]::WriteAllText($script, $body, (New-Object Text.UTF8Encoding($false)))
+    $tried = @()
+    foreach ($python in $candidates) {
+        if (-not (Get-Command $python -ErrorAction SilentlyContinue)) { $tried += "$python (not found)"; continue }
+        $env:PYTHONIOENCODING = "utf-8"
+        $text = & $python $script $savePath 2>$null
+        if ($LASTEXITCODE -eq 0 -and $text) { return ($text | Select-Object -Last 1 | ConvertFrom-Json) }
+        $tried += "$python (cannot read the save or import factorio_forge)"
+    }
+    throw ("Could not read the save's mod list through factorio-forge; tried: " + ($tried -join "; ") +
+        ". Pass -ForgePython <python with factorio_forge installed> or -UseModList.")
 }
 
 # A minimal client for the game's RCON (the Source RCON wire format): length,
@@ -189,33 +242,80 @@ $timer = [Diagnostics.Stopwatch]::StartNew()
 try {
     New-Item -ItemType Directory -Force -Path $work, "$work\mods", "$work\saves", $Out | Out-Null
 
-    # Only the enabled mods are copied: the whole folder can be gigabytes of
-    # graphics packs this run never loads.
-    $list = Get-Content (Join-Path $realMods "mod-list.json") -Raw -Encoding UTF8 | ConvertFrom-Json
-    $enabled = @($list.mods | Where-Object { $_.enabled } | ForEach-Object { $_.name })
-    $copied = 0
-    foreach ($file in Get-ChildItem $realMods -File -Filter *.zip) {
-        if ($file.Name -match '^(.+?)_\d+\.\d+\.\d+\.zip$' -and $enabled -contains $Matches[1]) {
-            if ($ModZip -and $Matches[1] -eq $ModName) { continue }
-            Copy-Item $file.FullName "$work\mods\" ; $copied++
+    # Only the mods this run loads are copied: the whole folder can be gigabytes
+    # of graphics packs it never touches.
+    $builtIn = Join-Path (Split-Path (Split-Path (Split-Path $exe))) "data"
+    $listEntries = @()
+    $modsNeeded = @()    # (name, version or $null) of mods that come from the mods folder
+    if ($UseModList) {
+        $list = Get-Content (Join-Path $realMods "mod-list.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+        $listEntries = @($list.mods | ForEach-Object { [pscustomobject]@{ name = $_.name; enabled = [bool]$_.enabled } })
+        $modsNeeded = @($list.mods | Where-Object { $_.enabled } | ForEach-Object { [pscustomobject]@{ name = $_.name; version = $null } })
+        Write-Host "mod set: the player's mod-list.json ($($modsNeeded.Count) enabled)"
+    }
+    else {
+        $saveMods = Get-SaveMods $Save $work
+        foreach ($m in $saveMods.mods) {
+            $name = $m[0]
+            $isBuiltIn = (Test-Path (Join-Path $builtIn "$name\info.json"))
+            $listEntries += [pscustomobject]@{ name = $name; enabled = $true }
+            if (-not $isBuiltIn) { $modsNeeded += [pscustomobject]@{ name = $name; version = [version]$m[1] } }
         }
+        # Built-in mods (base, space-age, ...) the save does not use are switched off,
+        # or the game would turn them on by itself.
+        $saveNames = @($saveMods.mods | ForEach-Object { $_[0] })
+        foreach ($dir in Get-ChildItem $builtIn -Directory) {
+            if ($dir.Name -ne "core" -and (Test-Path (Join-Path $dir.FullName "info.json")) -and $saveNames -notcontains $dir.Name) {
+                $listEntries += [pscustomobject]@{ name = $dir.Name; enabled = $false }
+            }
+        }
+        Write-Host "mod set: the save's own ($($saveMods.mods.Count) mods, game $($saveMods.game))"
     }
-    # Unpacked mods (folders) are rare; copy the enabled ones the same way.
-    foreach ($dir in Get-ChildItem $realMods -Directory) {
-        $name = $dir.Name -replace '_\d+\.\d+\.\d+$', ''
-        if ($enabled -contains $name) { Copy-Item $dir.FullName "$work\mods\$($dir.Name)" -Recurse; $copied++ }
+    if (-not ($modsNeeded | Where-Object { $_.name -eq $ModName })) {
+        $modsNeeded += [pscustomobject]@{ name = $ModName; version = $null }
+        if (-not ($listEntries | Where-Object { $_.name -eq $ModName })) { $listEntries += [pscustomobject]@{ name = $ModName; enabled = $true } }
     }
-    if ($ModZip) { Copy-Item $ModZip "$work\mods\" ; $copied++ }
-    # Several versions can sit in the mods folder; the game loads the newest.
-    $versions = @(Get-ChildItem "$work\mods" -Filter "${ModName}_*.zip" | ForEach-Object {
-        if ($_.Name -match '_(\d+)\.(\d+)\.(\d+)\.zip$') { [version]"$($Matches[1]).$($Matches[2]).$($Matches[3])" }
-    })
-    if (-not $versions) { throw "The companion mod ($ModName) is not among the enabled mods; pass -ModZip." }
+
+    $copied = 0
+    $usedLines = @()
+    foreach ($want in $modsNeeded) {
+        $name = $want.name
+        if ($ModZip -and $name -eq $ModName) { continue }
+        # Candidates in the mods folder: name_x.y.z.zip or an unpacked name_x.y.z folder.
+        $found = @(Get-ChildItem $realMods | Where-Object {
+            ($_.PSIsContainer -and $_.Name -match "^$([regex]::Escape($name))_\d+\.\d+\.\d+$") -or
+            (-not $_.PSIsContainer -and $_.Name -match "^$([regex]::Escape($name))_\d+\.\d+\.\d+\.zip$") })
+        if (-not $found) { throw "Mod '$name' is not in the mods folder ($realMods)." }
+        $exact = $null
+        if ($want.version) { $exact = $found | Where-Object { (Get-ModVersion $_.Name) -eq $want.version } | Select-Object -First 1 }
+        if ($exact) { $pick = $exact; $usedLines += "$name $($want.version)" }
+        else {
+            $pick = $found | Sort-Object { Get-ModVersion $_.Name } -Descending | Select-Object -First 1
+            $got = Get-ModVersion $pick.Name
+            $usedLines += if ($want.version) { "$name $got (the save names $($want.version), which is not in the mods folder)" } else { "$name $got (newest in the mods folder)" }
+        }
+        if ($pick.PSIsContainer) { Copy-Item $pick.FullName "$work\mods\$($pick.Name)" -Recurse } else { Copy-Item $pick.FullName "$work\mods\" }
+        $copied++
+    }
+    if ($ModZip) {
+        Copy-Item $ModZip "$work\mods\"; $copied++
+        $usedLines += "$ModName (from -ModZip $(Split-Path $ModZip -Leaf))"
+    }
+    foreach ($line in $usedLines) { Write-Host "  mod: $line" }
+    [IO.File]::WriteAllText((Join-Path $Out "mods-used.txt"), ($usedLines -join "`n") + "`n", (New-Object Text.UTF8Encoding($false)))
+
+    $versions = @(Get-ChildItem "$work\mods" -Filter "${ModName}_*" | ForEach-Object { Get-ModVersion $_.Name } | Where-Object { $_ })
+    if (-not $versions) { throw "The companion mod ($ModName) was not found; pass -ModZip." }
     $version = ($versions | Sort-Object -Descending)[0]
     if ($version -lt [version]"0.7.1") {
         throw "The companion mod is $version; 0.7.1 or newer is needed (older ones stop a headless server on /forge-export). Pass -ModZip with a fresh build."
     }
-    Copy-Item (Join-Path $realMods "mod-list.json") "$work\mods\"
+    if ($Measure -and $version -lt [version]"0.8.0") {
+        throw "The companion mod is $version; -Measure needs 0.8.0 or newer. Pass -ModZip with a fresh build."
+    }
+    # The mod list says exactly which of the copied mods load.
+    $modList = @{ mods = @($listEntries | ForEach-Object { @{ name = $_.name; enabled = $_.enabled } }) }
+    [IO.File]::WriteAllText("$work\mods\mod-list.json", ($modList | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding($false)))
     $settingsFile = Join-Path $realMods "mod-settings.dat"
     if (Test-Path $settingsFile) { Copy-Item $settingsFile "$work\mods\" }
 
@@ -298,8 +398,34 @@ try {
         Write-Host ("verify written after {0:N1}s" -f $timer.Elapsed.TotalSeconds)
     }
 
+    $measureFailed = $false
+    if ($Measure) {
+        $specText = ((Get-Content $Measure -Raw -Encoding UTF8) -replace '\s*[\r\n]+\s*', ' ').Trim()
+        $spec = $specText | ConvertFrom-Json
+        $speed = if ($spec.speed -and $spec.speed -gt 0) { [double]$spec.speed } else { 1.0 }
+        $gameSeconds = [double]$(if ($spec.warmup_s) { $spec.warmup_s } else { 60 }) + [double]$(if ($spec.measure_s) { $spec.measure_s } else { 120 })
+        # The game may not keep up with the speed asked for: allow three times the
+        # time it would take, and a couple of minutes to start.
+        $measureDeadline = (Get-Date).AddSeconds([Math]::Max(120, 3 * $gameSeconds / $speed + 120))
+        if ($measureDeadline -lt $deadline) { $measureDeadline = $deadline }
+        $answer = Invoke-Console "/forge-measure $specText"; Write-Host "measure answer: [$answer]"
+        if (-not (Wait-ForFile "$outDir\measure.json" $measureDeadline $proc $log)) {
+            throw "measure.json did not appear. See log tail."
+        }
+        $wanted += "measure.json"
+        Write-Host ("measure written after {0:N1}s" -f $timer.Elapsed.TotalSeconds)
+        $result = Get-Content "$outDir\measure.json" -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($result.ok) {
+            Write-Host ("measured: {0} of {1} entities placed" -f $result.placed, $result.expected)
+        }
+        else {
+            Write-Host "measure FAILED: $($result.error)"
+            $measureFailed = $true
+        }
+    }
+
     foreach ($name in $wanted) { Copy-Item "$outDir\$name" (Join-Path $Out $name) -Force }
-    $ok = $true
+    $ok = -not $measureFailed
 }
 catch {
     Write-Host "FAILED: $($_.Exception.Message)"
