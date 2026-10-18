@@ -40,6 +40,8 @@ local OUTPUT = "factorio-forge/"
 local SURFACE_PREFIX = "forge-measure"
 -- Statuses are sampled this often during the window (ticks).
 local SAMPLE_EVERY = 5
+-- The longest warm-up or window a spec may ask for, in game seconds.
+local MAX_SECONDS = 3600
 -- A token counter never holds more than this many items back, so a belt that
 -- was full for a while does not release a burst when it clears.
 local TOKEN_CAP = 2
@@ -275,20 +277,71 @@ end
 
 --- Build everything for a run and register it in storage. Raises on anything
 --- unexpected; `start` turns that into an answer.
-local function prepare(player, spec)
+local function check_point(label, at)
+    if type(at) ~= "table" or type(at[1]) ~= "number" or type(at[2]) ~= "number" then
+        error(label .. " needs \"at\": [x, y]")
+    end
+end
+
+local function check_direction(label, direction)
+    if direction ~= nil and (type(direction) ~= "number" or direction < 0 or direction > 15 or direction % 1 ~= 0) then
+        error(label .. " has an invalid direction")
+    end
+end
+
+--- Reject a spec that would fail halfway, before anything is created.
+local function validate(spec)
+    local seconds = { warmup_s = spec.warmup_s, measure_s = spec.measure_s }
+    for field, value in pairs(seconds) do
+        if type(value) ~= "number" then
+            error(field .. " is not a number")
+        end
+    end
+    if spec.measure_s ~= nil and (spec.measure_s <= 0 or spec.measure_s > MAX_SECONDS) then
+        error("measure_s must be above 0 and at most " .. MAX_SECONDS)
+    end
+    if spec.warmup_s ~= nil and (spec.warmup_s < 0 or spec.warmup_s > MAX_SECONDS) then
+        error("warmup_s must be between 0 and " .. MAX_SECONDS)
+    end
+    for index, source in pairs(spec.sources or {}) do
+        local label = "source " .. index
+        check_point(label, source.at)
+        check_direction(label, source.direction)
+        if source.fluid then
+            if not prototypes.fluid[source.fluid] then
+                error(label .. ": unknown fluid " .. tostring(source.fluid))
+            end
+        else
+            for _, item in pairs(source.items or {}) do
+                if not prototypes.item[item] then
+                    error(label .. ": unknown item " .. tostring(item))
+                end
+            end
+        end
+    end
+    for index, output in pairs(spec.outputs or {}) do
+        local label = "output " .. index
+        check_point(label, output.at)
+        check_direction(label, output.direction)
+    end
+end
+
+local function prepare(player, spec, m)
     local problems = {}
     local force = player and player.force or game.forces["player"]
+    m.force = force
 
     local inventory = game.create_inventory(1)
+    m.inventory = inventory
     local failed = inventory[1].import_stack(spec.blueprint) == 1
     local stack = inventory[1]
     if failed or not stack.valid_for_read or not stack.is_blueprint or not stack.is_blueprint_setup() then
-        inventory.destroy()
         error("the spec's blueprint is not a blueprint")
     end
     local entries = stack.get_blueprint_entities() or {}
 
     local surface, surface_report = new_surface(spec.surface)
+    m.surface = surface
 
     -- Chunks that reach the sources and sinks too, which can stand outside the
     -- blueprint's own entities.
@@ -328,6 +381,7 @@ local function prepare(player, spec)
         end
     end
     inventory.destroy()
+    m.inventory = nil
 
     local anchor = find_anchor(entries, built)
     if not anchor then
@@ -340,7 +394,7 @@ local function prepare(player, spec)
 
     -- A recipe the save has not unlocked would stop its machine. Unlocking is a
     -- flag on the force; it is switched back off when the run ends.
-    local unlocked = {}
+    local unlocked = m.unlocked
     for _, entity in pairs(built) do
         if entity.valid and (entity.type == "assembling-machine" or entity.type == "furnace") then
             local ok, recipe = pcall(function() return entity.get_recipe() end)
@@ -466,7 +520,7 @@ local function prepare(player, spec)
     local warmup = math.floor((spec.warmup_s or 60) * constants.ticks_per_second)
     local measure = math.floor((spec.measure_s or 120) * constants.ticks_per_second)
 
-    storage.measure = {
+    local filled = {
         spec_surface = spec.surface,
         surface = surface,
         force = force,
@@ -486,10 +540,12 @@ local function prepare(player, spec)
         measure = measure,
         ticks = 0,
         phase = "warmup",
-        speed_before = game.speed,
         started_at = game.tick,
         written = false,
     }
+    for field, value in pairs(filled) do
+        m[field] = value
+    end
     if spec.speed and spec.speed > 0 then
         game.speed = math.min(spec.speed, 100)
     end
@@ -701,6 +757,9 @@ end
 
 local function cleanup(m)
     script.on_nth_tick(1, nil)
+    if m.inventory and m.inventory.valid then
+        m.inventory.destroy()
+    end
     -- Recipes switched on for the run go back off, so that a measurement in a live
     -- game leaves the player's research exactly as it was.
     for _, name in pairs(m.unlocked or {}) do
@@ -777,20 +836,40 @@ function M.start(player, text)
         say(player, "Forge: the spec is not JSON with a blueprint string.")
         return
     end
-    local ok, err = pcall(prepare, player, spec)
-    if not ok then
-        local failure = tostring(err)
-        local m = storage.measure
-        if m then
-            pcall(cleanup, m)
-        end
+    if storage.run or storage.pending_start then
+        say(player, "Forge: a circuit run is going; finish or /forge-clean it first.")
+        return
+    end
+    local valid, invalid = pcall(validate, spec)
+    if not valid then
+        local failure = tostring(invalid)
         write_result({ ok = false, error = failure })
         say(player, "Forge: could not set the measurement up: " .. failure)
         return
     end
-    local m = storage.measure
+    -- The record exists before the first side effect, so a failure halfway can be undone.
+    local m = { unlocked = {}, speed_before = game.speed }
+    storage.measure = m
+    local ok, err = pcall(prepare, player, spec, m)
+    if not ok then
+        local failure = tostring(err)
+        pcall(cleanup, m)
+        write_result({ ok = false, error = failure })
+        say(player, "Forge: could not set the measurement up: " .. failure)
+        return
+    end
     say(player, string.format("Forge: measuring %d of %d entities for %d + %d game seconds.",
         m.placed, m.expected, m.warmup / constants.ticks_per_second, m.measure / constants.ticks_per_second))
+end
+
+--- Stop a run and undo it; returns true when there was one.
+function M.abort()
+    local m = storage.measure
+    if not m then
+        return false
+    end
+    pcall(cleanup, m)
+    return true
 end
 
 --- A saved game that was loaded in the middle of a run carries on with it.

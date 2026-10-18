@@ -11,10 +11,14 @@ Date: 18. 10. 2026
       output, or without power.
     - tools/headless-run.ps1 -Measure <spec file> runs it in a game without a window.
   Changes:
+    - /forge-clean also stops a measurement and removes its surface; a spec with an unknown fluid
+      or item, a missing position, a bad direction or an impossible length is refused before anything
+      is created, and a run that fails halfway puts the recipes and game speed back.
     - tools/headless-run.ps1 now loads the mods the save was made with (read from the save by
       factorio-forge), not the ones enabled in the player's mod-list.json, so a mod enabled for
       something else no longer ends up in the export. Each mod is taken at the version the save
-      names when that file exists, otherwise the newest, and the run says which. -UseModList brings
+      names when that file exists, otherwise the newest, and the run says which. The companion
+      itself is the exception: it is the -ModZip build or the newest installed one. -UseModList brings
       the old behaviour back.
 ---------------------------------------------------------------------------------------------------
 Version: 0.7.1

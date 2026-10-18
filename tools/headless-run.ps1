@@ -20,7 +20,8 @@
 # mod another project enabled in the player's mod-list.json does not leak in):
 # each mod at the version the save names when that file is in the mods folder,
 # else the newest one there, and the run says which. -UseModList takes the
-# player's mod-list.json instead. The companion mod is always added.
+# player's mod-list.json instead. The companion mod is always added, at the
+# -ModZip build or else the newest installed one (never the save's version).
 #
 # -Measure builds a blueprint on an empty surface and measures what it makes;
 # see the README ("/forge-measure") for the spec and the result.
@@ -293,12 +294,13 @@ try {
             throw "Mod '$name' is not in the mods folder ($realMods)."
         }
         $exact = $null
-        if ($want.version) { $exact = $found | Where-Object { (Get-ModVersion $_.Name) -eq $want.version } | Select-Object -First 1 }
+        # The companion only exports and measures; its version is never taken from the save.
+        if ($want.version -and $name -ne $ModName) { $exact = $found | Where-Object { (Get-ModVersion $_.Name) -eq $want.version } | Select-Object -First 1 }
         if ($exact) { $pick = $exact; $usedLines += "$name $($want.version)" }
         else {
             $pick = $found | Sort-Object { Get-ModVersion $_.Name } -Descending | Select-Object -First 1
             $got = Get-ModVersion $pick.Name
-            $usedLines += if ($want.version) { "$name $got (the save names $($want.version), which is not in the mods folder)" } else { "$name $got (newest in the mods folder)" }
+            $usedLines += if ($name -eq $ModName -and $want.version) { "$name $got (newest installed; the save names $($want.version), which is not used for the companion)" } elseif ($want.version) { "$name $got (the save names $($want.version), which is not in the mods folder)" } else { "$name $got (newest in the mods folder)" }
         }
         if ($pick.PSIsContainer) { Copy-Item $pick.FullName "$work\mods\$($pick.Name)" -Recurse } else { Copy-Item $pick.FullName "$work\mods\" }
         $copied++

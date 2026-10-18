@@ -316,10 +316,15 @@ idle); the script ends its own process by pid a few seconds after that.
 
 ## A note on scope
 
-This mod only reads and writes files. It changes no recipes and touches
-nothing in your world — `/forge-verify`, `/forge-circuit` and `/forge-measure` work on a separate
-scratch surface created for the purpose, never on the surface you are playing
-on.
+This mod mostly reads and writes files. `/forge-verify`, `/forge-circuit` and
+`/forge-measure` work on a separate scratch surface created for the purpose,
+never on the surface you are playing on.
+
+`/forge-measure` does reach past that surface while it runs: it switches on, for
+your force, the recipes the build uses if you have not unlocked them, and it can
+change the game speed. Both are put back when the run ends, is stopped with
+`/forge-clean`, or fails. In a game you care about, run it through
+`tools/headless-run.ps1` on a copy of the save instead.
 
 It does define two prototypes, and both exist only to power that scratch
 surface: an electric pole with the largest supply area the engine allows, and

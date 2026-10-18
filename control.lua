@@ -516,6 +516,9 @@ commands.add_command("forge-clean", { "forge.cmd-clean" }, function(event)
     if aborted then
         player.print({ "forge.run-aborted", aborted })
     end
+    if measure.abort() then
+        player.print({ "forge.measure-aborted" })
+    end
 
     local speed_restored = circuit.restore_speed()
     local status = scratch.remove()
@@ -571,6 +574,9 @@ gui.actions = {
         local aborted = circuit.abort()
         if aborted then
             player.print({ "forge.run-aborted", aborted })
+        end
+        if measure.abort() then
+            player.print({ "forge.measure-aborted" })
         end
         if circuit.restore_speed() then
             player.print({ "forge.clean-speed" })
