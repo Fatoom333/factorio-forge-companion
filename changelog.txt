@@ -1,4 +1,17 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.8.1
+Date: 18. 10. 2026
+  Features:
+    - /forge-measure: with "lanes": true in the spec, every output also reports what arrived on its
+      left and on its right lane (outputs[].lanes, per second, seen along the output belt's own
+      direction); a lane that carried nothing is left out.
+    - /forge-measure: with "tanks": true, the file lists every storage tank on the measuring surface
+      with its fluid, amount and the prototype's own capacity (tanks[]), taken at the end of the run.
+  Changes:
+    - A "lanes" or "tanks" that is not true or false is refused before anything is created.
+    - tools/headless-run.ps1 says when the server's exit code comes from ending the idle process
+      itself, instead of a bare -1.
+---------------------------------------------------------------------------------------------------
 Version: 0.8.0
 Date: 18. 10. 2026
   Features:

@@ -150,7 +150,8 @@ sends one, see below):
 `at` is a tile in the blueprint's own coordinates (the ones the factorio-forge
 plan and report use). Optional: `speed` (game speed during the run, up to 100),
 `direction` on an output (the way a belt the run has to add flows),
-`temperature` on a fluid source, `id` anywhere. `targets` are only passed
+`temperature` on a fluid source, `id` anywhere, `"lanes": true` (see Sinks) and
+`"tanks": true` (see Window). `targets` are only passed
 through for the reader of the result.
 
 What the run does, and what it uses:
@@ -176,7 +177,9 @@ What the run does, and what it uses:
   source's tile, one is added.
 - **Sinks.** At each output the belt is emptied every tick and what was taken is
   counted by item (`outputs[].delivered`, per second). If there is no belt at an
-  output's tile, one is added.
+  output's tile, one is added. With `"lanes": true` each output also gets
+  `lanes`: the same counts split into `left` and `right`, seen along the output
+  belt's own direction (a lane that carried nothing is left out).
 - **Window.** `warmup_s` seconds, then `measure_s` seconds counted. Production
   and consumption per second (`produced`, `consumed`, and the `fluids_` pair) are
   the force's production statistics for the measuring surface between the start
@@ -185,6 +188,10 @@ What the run does, and what it uses:
   input (with the ingredient it lacked in `missing`), blocked on a full output,
   without power, without fuel, or other. `final_status` counts the statuses of
   everything else at the end (an inserter without power shows there).
+  With `"tanks": true` the file also has `tanks`: every storage tank on the
+  surface at the end of the run, with `fluid`, `amount` and `capacity` (the
+  prototype's own volume; the game's fluidbox capacity also counts every pipe
+  connected to the tank).
 - **After.** The surface is deleted, game speed and the recipes the run had to
   unlock are put back; nothing of it stays in the save.
 

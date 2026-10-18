@@ -443,6 +443,7 @@ catch {
     }
 }
 finally {
+    $killed = $false
     if ($proc -and -not $proc.HasExited) {
         $asked = $false
         try { Send-Rcon 2 "/quit"; $asked = $true } catch {}
@@ -467,12 +468,13 @@ finally {
         if ($proc.HasExited) { Write-Host ("server quit by itself in {0:N1}s" -f $quitting.Elapsed.TotalSeconds) }
         else {
             Write-Host ("game session closed: {0}; ending the idle process {1}" -f $closed, $proc.Id)
-            try { $proc.Kill() } catch {}
+            try { $proc.Kill(); $killed = $true } catch {}
             $proc.WaitForExit(10000) | Out-Null
         }
     }
     if ($script:rcon) { try { $script:rcon.Close() } catch {} }
-    if ($proc) { Write-Host "server exit code: $($proc.ExitCode)" }
+    if ($proc -and $killed) { Write-Host "server exit code: $($proc.ExitCode) (the idle process was ended by this script, so -1 is expected)" }
+    elseif ($proc) { Write-Host "server exit code: $($proc.ExitCode)" }
     if (Test-Path "$work\factorio-current.log") { Copy-Item "$work\factorio-current.log" (Join-Path $Out "headless-factorio.log") -Force }
     Start-Sleep -Milliseconds 500
     if ($KeepTemp) { Write-Host "kept: $work" }
