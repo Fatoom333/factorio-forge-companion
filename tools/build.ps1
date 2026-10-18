@@ -32,6 +32,7 @@ $contents = @(
     "circuit.lua",
     "constants.lua",
     "scratch.lua",
+    "measure.lua",
     "LICENSE",
     "locale/en/strings.cfg",
     "locale/ru/strings.cfg"

@@ -129,6 +129,68 @@ surface with no power network would otherwise record the right number of frames
 with nothing happening in them. This is deliberate: the recording answers what
 the logic does, not whether your power holds up.
 
+### `/forge-measure <spec json>`
+
+Builds a blueprint on an empty surface of its own, runs it for a while, and
+writes `measure.json`: what the build really makes, not what its machines could.
+`/forge-verify` asks whether a blueprint places; this asks what it does.
+
+The command takes the spec as its text (a mod cannot read a file; the runner
+sends one, see below):
+
+```json
+{"blueprint": "<string>", "surface": "vulcanus",
+ "sources": [{"at": [x, y], "direction": 4, "items": ["iron-plate", "copper-cable"], "rate": 2.0},
+             {"at": [x, y], "fluid": "water", "rate": 50}],
+ "outputs": [{"at": [x, y], "item": "advanced-circuit"}],
+ "targets": [{"item": "advanced-circuit", "rate": 1.0}],
+ "warmup_s": 60, "measure_s": 120}
+```
+
+`at` is a tile in the blueprint's own coordinates (the ones the factorio-forge
+plan and report use). Optional: `speed` (game speed during the run, up to 100),
+`direction` on an output (the way a belt the run has to add flows),
+`temperature` on a fluid source, `id` anywhere. `targets` are only passed
+through for the reader of the result.
+
+What the run does, and what it uses:
+
+- **Surface.** A new surface with lab tiles and frozen daylight, given the
+  surface properties (pressure, gravity, ...) of the planet named in
+  `surface`. The planet is looked up as a prototype and nothing is hardcoded; a
+  name nobody has gives the properties' defaults, and the file says so. A recipe
+  whose surface conditions fail there is dropped by the paste, as in a real
+  game: the machine then reports `no_recipe`.
+- **Anchor.** The game centres a blueprint on the spot it is pasted at, so the
+  shift between the blueprint's coordinates and the surface's is found by
+  matching the stack's entities against the ones that stand (`anchor` in the
+  file, with how many matched); sources and outputs are then placed by tile.
+- **Power.** The mod's own `forge-power-source` (an `electric-energy-interface`,
+  one gigawatt) and invisible poles over the whole build.
+- **Supply.** Each belt source puts items on the belt at its tile by script: the
+  first item on the left lane, the second (or the same) on the right, `rate`
+  items per second over both lanes, as in a plan's `sources`; no rate means as
+  fast as the belt takes. If the belt has no room the item waits, and
+  `fed_rate` in the file shows what actually went in. A fluid source is an
+  `infinity-pipe` on the tile; its rate is not limited. If there is no belt at a
+  source's tile, one is added.
+- **Sinks.** At each output the belt is emptied every tick and what was taken is
+  counted by item (`outputs[].delivered`, per second). If there is no belt at an
+  output's tile, one is added.
+- **Window.** `warmup_s` seconds, then `measure_s` seconds counted. Production
+  and consumption per second (`produced`, `consumed`, and the `fluids_` pair) are
+  the force's production statistics for the measuring surface between the start
+  and the end of the window. Every crafting machine's status is sampled every
+  five ticks: `machines[].shares` is the share of samples working, waiting for
+  input (with the ingredient it lacked in `missing`), blocked on a full output,
+  without power, without fuel, or other. `final_status` counts the statuses of
+  everything else at the end (an inserter without power shows there).
+- **After.** The surface is deleted, game speed and the recipes the run had to
+  unlock are put back; nothing of it stays in the save.
+
+An error anywhere is written as `{"ok": false, "error": ...}` instead of
+stopping a headless server.
+
 ### `/forge-clean`
 
 Deletes the scratch surface, in case a run left one behind, stops a circuit
@@ -204,7 +266,7 @@ copy of a save:
 ```
 
 It refuses to start while Factorio is running, builds a temporary folder with
-its own `config.ini`, a copy of the save and a copy of only the enabled mods,
+its own `config.ini`, a copy of the save and a copy of only the mods the save was made with,
 starts `factorio --start-server` there (game and RCON ports on 127.0.0.1, at
 random numbers, RCON password made per run and never printed), runs
 `/forge-export` and `/forge-verify` over RCON, copies `environment.json` and
@@ -219,6 +281,25 @@ user could read it; it is random per run and the port is loopback only.
 `-DataDir` names the real data folder (default `%APPDATA%\Factorio`),
 `-Factorio` the executable (found in the usual Steam places otherwise),
 `-ModZip` a freshly built companion to use instead of the installed one.
+
+**Which mods load.** The save's own set, not the player's `mod-list.json`: the
+list can have mods enabled for something else, and a run that loads them no
+longer matches the save's profile. The script asks factorio-forge for the mods
+in the save's header (`factorio_forge.save`, run with `-ForgePython`, else
+`$env:FACTORIO_FORGE_PYTHON`, else `python` or `py`) and writes the temporary
+`mod-list.json` from them; built-in mods the save does not use are switched off.
+Each mod is copied at the version the save names when that file is in the mods
+folder, otherwise at the newest one there, and the run prints and writes
+(`mods-used.txt` in `-Out`) which it used. The companion is always added, at
+`-ModZip` if given. `-UseModList` takes the player's mod-list.json instead.
+
+**Measuring.** `-Measure spec.json` runs `/forge-measure` on a spec file (see
+above; the script sends it over RCON, since a mod cannot read files) and copies
+`measure.json` to `-Out`. It needs the companion 0.8.0 or newer. The wait is
+sized from the spec's warm-up, measured stretch and `speed`; at `speed` 10 a
+60 + 120 second run takes about twenty seconds. factorio-forge writes the spec
+from a plan (`factorio-forge measure spec`) and reads the answer back
+(`factorio-forge measure result`).
 
 What the commands need. `/forge-export` and `/forge-verify` run with no player
 (from companion 0.7.1; in 0.7.0 `game.get_player(nil)` raised, and a headless
@@ -235,10 +316,15 @@ idle); the script ends its own process by pid a few seconds after that.
 
 ## A note on scope
 
-This mod only reads and writes files. It changes no recipes and touches
-nothing in your world — `/forge-verify` and `/forge-circuit` work on a separate
-scratch surface created for the purpose, never on the surface you are playing
-on.
+This mod mostly reads and writes files. `/forge-verify`, `/forge-circuit` and
+`/forge-measure` work on a separate scratch surface created for the purpose,
+never on the surface you are playing on.
+
+`/forge-measure` does reach past that surface while it runs: it switches on, for
+your force, the recipes the build uses if you have not unlocked them, and it can
+change the game speed. Both are put back when the run ends, is stopped with
+`/forge-clean`, or fails. In a game you care about, run it through
+`tools/headless-run.ps1` on a copy of the save instead.
 
 It does define two prototypes, and both exist only to power that scratch
 surface: an electric pole with the largest supply area the engine allows, and
