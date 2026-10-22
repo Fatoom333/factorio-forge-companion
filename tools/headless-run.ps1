@@ -2,6 +2,7 @@
 # companion mod writes.
 #
 #   headless-run.ps1 -Save my-save.zip -Out out [-Blueprint line.txt] [-Measure spec.json]
+#                    [-Survey seconds [-SurveySurface name] [-SurveyArea "x1,y1,x2,y2"]]
 #
 # What it does, in order:
 #   1. refuses to start if Factorio is already running;
@@ -22,6 +23,10 @@
 # else the newest one there, and the run says which. -UseModList takes the
 # player's mod-list.json instead. The companion mod is always added, at the
 # -ModZip build or else the newest installed one (never the save's version).
+#
+# -Survey runs /forge-survey: the base is watched for that many game seconds
+# and survey.json is copied to -Out (see the README, "/forge-survey"). With no
+# player the surface must be named: -SurveySurface, default nauvis.
 #
 # -Measure builds a blueprint on an empty surface and measures what it makes;
 # see the README ("/forge-measure") for the spec and the result.
@@ -49,6 +54,12 @@ param(
     # A measuring spec (JSON, see README); when given, /forge-measure is run on it
     # and measure.json is copied to -Out. The spec may carry "speed" (game speed).
     [string] $Measure,
+    # Watch the base for this many game seconds (5..3600) with /forge-survey and
+    # copy survey.json to -Out. The surface has no player to default from.
+    [int] $Survey = 0,
+    [string] $SurveySurface = "nauvis",
+    # "x1,y1,x2,y2": only this rectangle; by default the box around the base.
+    [string] $SurveyArea,
     # Take the mods from the player's mod-list.json instead of from the save.
     [switch] $UseModList,
     # A python that can import factorio_forge (reads the save's mod list);
@@ -66,6 +77,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# What goes into a console command is checked, never pasted as it comes.
+if ($Survey -ne 0 -and ($Survey -lt 5 -or $Survey -gt 3600)) { throw "-Survey is a number of seconds from 5 to 3600." }
+if ($SurveySurface -notmatch '^[A-Za-z0-9_.-]+$') { throw "-SurveySurface: a surface name without spaces or odd characters." }
+if ($SurveyArea -and $SurveyArea -notmatch '^-?\d+(\.\d+)?(,-?\d+(\.\d+)?){3}$') { throw "-SurveyArea is four numbers: x1,y1,x2,y2." }
 $ModName = "factorio-forge-companion"
 
 function Find-Factorio {
@@ -432,8 +447,39 @@ try {
         }
     }
 
+    $surveyFailed = $false
+    if ($Survey) {
+        $line = "/forge-survey $Survey surface=$SurveySurface"
+        if ($SurveyArea) { $line += " area=$SurveyArea" }
+        # The window passes at the game's speed: allow three times of it, and the
+        # time the file takes to write.
+        $surveyDeadline = (Get-Date).AddSeconds(3 * $Survey + 120)
+        if ($surveyDeadline -lt $deadline) { $surveyDeadline = $deadline }
+        $answer = Invoke-Console $line; Write-Host "survey answer: [$answer]"
+        # The version number does not say whether a build has the command; the game
+        # does: every answer of /forge-survey starts with "Forge:", whatever the
+        # language of the game's own "unknown command" is.
+        if ($answer -notmatch 'Forge:') {
+            throw "This companion build has no /forge-survey; pass -ModZip with a fresh build."
+        }
+        if (-not (Wait-ForFile "$outDir\survey.json" $surveyDeadline $proc $log)) {
+            throw "survey.json did not appear. See log tail."
+        }
+        $wanted += "survey.json"
+        Write-Host ("survey written after {0:N1}s" -f $timer.Elapsed.TotalSeconds)
+        # Not parsed (the blueprint inside can be megabytes); the kind says whether it is an answer.
+        $body = [IO.File]::ReadAllText("$outDir\survey.json", (New-Object Text.UTF8Encoding($false)))
+        if ($body -match '"kind"\s*:\s*"survey"') {
+            Write-Host "surveyed: survey.json written"
+        }
+        else {
+            Write-Host ("survey FAILED: " + $body.Substring(0, [Math]::Min(400, $body.Length)))
+            $surveyFailed = $true
+        }
+    }
+
     foreach ($name in $wanted) { Copy-Item "$outDir\$name" (Join-Path $Out $name) -Force }
-    $ok = -not $measureFailed
+    $ok = (-not $measureFailed) -and (-not $surveyFailed)
 }
 catch {
     Write-Host "FAILED: $($_.Exception.Message)"

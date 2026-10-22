@@ -195,6 +195,58 @@ What the run does, and what it uses:
 An error anywhere is written as `{"ok": false, "error": ...}` instead of
 stopping a headless server.
 
+### `/forge-survey [seconds] [surface=<name>] [area=x1,y1,x2,y2]`
+
+Watches the base for a while and writes `survey.json` (in
+`script-output/factorio-forge/`): what the base is doing, as shares of the
+window rather than one tick's luck. Seconds default to 60 (5 to 3600); the
+surface defaults to the calling player's and must be named from a server
+console or RCON; the area defaults to the box around everything the force has
+on that surface. The command says in chat when it starts and when the file is
+written. It never changes the world, and it works with no player.
+
+Once a second over the window it looks at every crafting machine (assembling
+machines, furnaces, rocket silos, anything that crafts) and every mining drill
+of the force in the area. The file holds:
+
+- `machines`: per machine its recipe, crafting speed, `states` (the share of
+  the window spent in each entity status, in snake case: `working`,
+  `no_ingredients`, `output_full`, ...), `missing` (while it waited for
+  ingredients, which ingredients of the recipe it did not hold enough of,
+  items in its input slots and fluids in its fluid boxes, as a share of the
+  window) and `crafts_per_s` (crafts finished over the window).
+- `miners`: per drill the resource it mines, the amount left under it, the
+  patch (`field`) it belongs to and its `states`. A drill on an infinite
+  resource (a geyser, say) has `"infinite": true`, no `amount_left` and no
+  patch: its yield is not an amount that runs out.
+- `fields`: connected patches of the resources the drills mine, with total
+  `amount`, `tiles` and `drills`. Tiles with up to two empty tiles between them
+  count as one patch. The search is bounded so a huge map cannot stall the
+  game: drills of one resource that are more than 48 tiles apart are searched
+  on their own, each search looks at most 100000 resource entities, and its
+  box grows from the drills' tiles by 8, 16, 32, 64, 128 and 256 tiles
+  (six rounds, so a patch is followed up to about 500 tiles from its drills).
+  A patch that still reaches the edge of the box, or was cut by the entity
+  cap, has `"truncated": true`: its `amount` and `tiles` are then a lower
+  bound.
+- `flows`: per item and fluid, made and used per second on that surface, from
+  the force's production statistics (the totals at the start and the end of
+  the window, subtracted).
+- `power`: per electric network that machines or drills of the area are on,
+  `made_w` and `used_w` (watts, averaged over the window, from the network's
+  statistics: producers and consumers, accumulators on both sides) and
+  `satisfaction`, estimated as one minus the share of those machines' samples
+  spent short of power; `machines` counts them.
+- `blueprint` and `blueprint_origin`: the area as a blueprint string, and the
+  world tile its (0, 0) stands on, so a world position minus the origin is a
+  blueprint position. The two are written together: when the origin cannot
+  be worked out, neither is.
+
+Machines and drills built during the window are not in it. `area` in the file
+is the rectangle that was used. The format is read by factorio-forge
+(`factorio_forge.survey`). A command that cannot start, or a run that fails,
+writes `{"kind": "survey-failed", "error": ...}` to the same file.
+
 ### `/forge-clean`
 
 Deletes the scratch surface, in case a run left one behind, stops a circuit
@@ -304,6 +356,12 @@ sized from the spec's warm-up, measured stretch and `speed`; at `speed` 10 a
 60 + 120 second run takes about twenty seconds. factorio-forge writes the spec
 from a plan (`factorio-forge measure spec`) and reads the answer back
 (`factorio-forge measure result`).
+
+**Surveying.** `-Survey <seconds>` runs `/forge-survey` after the world is up
+(at the game's speed, so the run lasts about that long), waits for
+`survey.json` and copies it to `-Out`. With no player the surface is named by
+`-SurveySurface` (default `nauvis`); `-SurveyArea "x1,y1,x2,y2"` limits it to a
+rectangle.
 
 What the commands need. `/forge-export` and `/forge-verify` run with no player
 (from companion 0.7.1; in 0.7.0 `game.get_player(nil)` raised, and a headless
