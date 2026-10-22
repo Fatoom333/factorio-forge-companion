@@ -216,23 +216,31 @@ of the force in the area. The file holds:
   items in its input slots and fluids in its fluid boxes, as a share of the
   window) and `crafts_per_s` (crafts finished over the window).
 - `miners`: per drill the resource it mines, the amount left under it, the
-  patch (`field`) it belongs to and its `states`.
+  patch (`field`) it belongs to and its `states`. A drill on an infinite
+  resource (a geyser, say) has `"infinite": true`, no `amount_left` and no
+  patch: its yield is not an amount that runs out.
 - `fields`: connected patches of the resources the drills mine, with total
   `amount`, `tiles` and `drills`. Tiles with up to two empty tiles between them
   count as one patch. The search is bounded so a huge map cannot stall the
-  game: at most 100000 resource entities of one kind, grown over at most six
-  widenings of the searched area; a patch that hit the bound has
-  `"truncated": true`.
+  game: drills of one resource that are more than 48 tiles apart are searched
+  on their own, each search looks at most 100000 resource entities, and its
+  box grows from the drills' tiles by 8, 16, 32, 64, 128 and 256 tiles
+  (six rounds, so a patch is followed up to about 500 tiles from its drills).
+  A patch that still reaches the edge of the box, or was cut by the entity
+  cap, has `"truncated": true`: its `amount` and `tiles` are then a lower
+  bound.
 - `flows`: per item and fluid, made and used per second on that surface, from
   the force's production statistics (the totals at the start and the end of
   the window, subtracted).
 - `power`: per electric network that machines or drills of the area are on,
-  `made_w` and `used_w` over the window (from the network's statistics) and
+  `made_w` and `used_w` (watts, averaged over the window, from the network's
+  statistics: producers and consumers, accumulators on both sides) and
   `satisfaction`, estimated as one minus the share of those machines' samples
   spent short of power; `machines` counts them.
 - `blueprint` and `blueprint_origin`: the area as a blueprint string, and the
   world tile its (0, 0) stands on, so a world position minus the origin is a
-  blueprint position.
+  blueprint position. The two are written together: when the origin cannot
+  be worked out, neither is.
 
 Machines and drills built during the window are not in it. `area` in the file
 is the rectangle that was used. The format is read by factorio-forge

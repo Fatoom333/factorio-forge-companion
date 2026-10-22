@@ -336,9 +336,6 @@ try {
     if ($Measure -and $version -lt [version]"0.8.0") {
         throw "The companion mod is $version; -Measure needs 0.8.0 or newer. Pass -ModZip with a fresh build."
     }
-    if ($Survey -and $version -lt [version]"0.8.0") {
-        throw "The companion mod is $version; -Survey needs a build that has /forge-survey. Pass -ModZip with a fresh build."
-    }
     # The mod list says exactly which of the copied mods load.
     $modList = @{ mods = @($listEntries | ForEach-Object { @{ name = $_.name; enabled = $_.enabled } }) }
     [IO.File]::WriteAllText("$work\mods\mod-list.json", ($modList | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding($false)))
@@ -459,6 +456,12 @@ try {
         $surveyDeadline = (Get-Date).AddSeconds(3 * $Survey + 120)
         if ($surveyDeadline -lt $deadline) { $surveyDeadline = $deadline }
         $answer = Invoke-Console $line; Write-Host "survey answer: [$answer]"
+        # The version number does not say whether a build has the command; the game
+        # does: every answer of /forge-survey starts with "Forge:", whatever the
+        # language of the game's own "unknown command" is.
+        if ($answer -notmatch 'Forge:') {
+            throw "This companion build has no /forge-survey; pass -ModZip with a fresh build."
+        }
         if (-not (Wait-ForFile "$outDir\survey.json" $surveyDeadline $proc $log)) {
             throw "survey.json did not appear. See log tail."
         }

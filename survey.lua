@@ -28,13 +28,18 @@ local SAMPLE_EVERY = 60 -- ticks: once a second
 -- Resource patches. Two resource tiles belong to one patch when they are no
 -- more than LINK tiles apart in both directions (so up to two empty tiles may
 -- lie between them). The search for a patch is bounded so a huge map cannot
--- stall the game: at most MAX_FIELD_ENTITIES resource entities of one kind are
--- looked at, grown over at most MAX_ROUNDS widenings of the searched area; a
--- patch that hit the bound is written with "truncated": true.
+-- stall the game: at most MAX_FIELD_ENTITIES resource entities are looked at in
+-- one search box, and the box (around a group of nearby drills) is widened at
+-- most MAX_ROUNDS - 1 times, the margin doubling each time (8, 16, 32 ... tiles);
+-- a patch that still reaches the edge of the box, or was cut by the entity cap,
+-- is written with "truncated": true (its size is then a lower bound).
 local LINK = 3
 local MAX_FIELD_ENTITIES = 100000
 local MAX_ROUNDS = 6
 local MARGIN = 8
+-- Drills no further apart than this (in both directions) are searched together;
+-- drills of one resource farther apart get a search box each.
+local GROUP_GAP = 48
 
 -- Entity statuses that mean "waiting for something to craft with".
 local WAITING_INPUT = {
@@ -200,7 +205,14 @@ local function recipe_name_of(entity)
     if entity.type == "furnace" then
         local previous = read(entity, "previous_recipe")
         if previous then
-            return previous.name or (previous.valid and previous.name) or nil
+            -- `name` may come back as a prototype object rather than a string.
+            local name = read(previous, "name")
+            if type(name) ~= "string" then
+                name = name and read(name, "valid") and read(name, "name") or nil
+            end
+            if type(name) == "string" then
+                return name
+            end
         end
     end
     return nil
@@ -264,16 +276,22 @@ local function electric_network(entity)
     return nil
 end
 
-local function counts(statistics)
+--- Made and used totals of a flow statistics object. For items and fluids the
+--- game's input side is what was made and the output side what was used; an
+--- electric network's statistics are the other way round (input holds the
+--- consumers, output the producers -- checked in the game), hence `electric`.
+local function counts(statistics, electric)
     local made, used = {}, {}
     if not statistics then
         return { made = made, used = used }
     end
     pcall(function()
-        for name, count in pairs(statistics.input_counts) do
+        local made_side = electric and statistics.output_counts or statistics.input_counts
+        local used_side = electric and statistics.input_counts or statistics.output_counts
+        for name, count in pairs(made_side) do
             made[tostring(name)] = count
         end
-        for name, count in pairs(statistics.output_counts) do
+        for name, count in pairs(used_side) do
             used[tostring(name)] = count
         end
     end)
@@ -349,13 +367,13 @@ end
 --- Cluster the resource entities of one kind found in `box`; returns the
 --- entities, their cluster index (union-find roots) and whether the bound hit.
 local function cluster(surface, name, box)
-    local found = surface.find_entities_filtered({ area = box, name = name, type = "resource" })
+    -- `limit` makes the cap bound the work, not only the list kept afterwards.
+    local found = surface.find_entities_filtered({
+        area = box, name = name, type = "resource", limit = MAX_FIELD_ENTITIES + 1 })
     local truncated = false
     if #found > MAX_FIELD_ENTITIES then
         truncated = true
-        for index = #found, MAX_FIELD_ENTITIES + 1, -1 do
-            found[index] = nil
-        end
+        found[#found] = nil
     end
     local parent = {}
     local function root(i)
@@ -405,6 +423,63 @@ local function cluster(surface, name, box)
     return found, roots, truncated
 end
 
+--- Drills of one resource, split into groups of drills that lie near each other
+--- (no more than GROUP_GAP tiles apart), so that two outposts far apart are
+--- searched on their own and not through one box spanning the map between them.
+local function group_drills(list)
+    local parent = {}
+    local function root(i)
+        while parent[i] ~= i do
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        end
+        return i
+    end
+    local grid = {}
+    local cells = {}
+    for i, drill in ipairs(list) do
+        parent[i] = i
+        local p = drill.entity.position
+        local cx, cy = math.floor(p.x / GROUP_GAP), math.floor(p.y / GROUP_GAP)
+        cells[i] = { cx, cy }
+        local cell = key(cx, cy)
+        grid[cell] = grid[cell] or {}
+        table.insert(grid[cell], i)
+    end
+    for i, drill in ipairs(list) do
+        local p = drill.entity.position
+        for dx = -1, 1 do
+            for dy = -1, 1 do
+                for _, j in ipairs(grid[key(cells[i][1] + dx, cells[i][2] + dy)] or {}) do
+                    if j > i then
+                        local q = list[j].entity.position
+                        if math.abs(p.x - q.x) <= GROUP_GAP and math.abs(p.y - q.y) <= GROUP_GAP then
+                            local a, b = root(i), root(j)
+                            if a ~= b then
+                                parent[a] = b
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    local groups, by_root = {}, {}
+    for i, drill in ipairs(list) do
+        local r = root(i)
+        local group = by_root[r]
+        if not group then
+            group = { first = drill.entity.unit_number }
+            by_root[r] = group
+            groups[#groups + 1] = group
+        end
+        group.first = math.min(group.first, drill.entity.unit_number)
+        group[#group + 1] = drill
+    end
+    table.sort(groups, function(a, b) return a.first < b.first end)
+    return groups
+end
+
 --- Patches under the drills. `drills` holds {entity, name, under} where `name`
 --- is the resource the drill mines and `under` the resource entities of that
 --- name beneath it. Sets drill.field and returns the field records.
@@ -425,117 +500,160 @@ local function build_fields(surface, drills, first_id)
     local fields = {}
     local next_id = first_id
     for _, name in ipairs(names) do
-        local list = by_resource[name]
-        local seed_keys = {}
-        local x1, y1, x2, y2
-        for _, drill in ipairs(list) do
-            for _, resource in ipairs(drill.under) do
-                local p = resource.position
-                seed_keys[key(p.x, p.y)] = true
-                x1 = x1 and math.min(x1, p.x) or p.x
-                y1 = y1 and math.min(y1, p.y) or p.y
-                x2 = x2 and math.max(x2, p.x) or p.x
-                y2 = y2 and math.max(y2, p.y) or p.y
+        -- Tiles already part of a patch found for an earlier group of drills.
+        local claimed = {}
+        local record_of_id = {}
+        for _, group in ipairs(group_drills(by_resource[name])) do
+            local pending = {}
+            for _, drill in ipairs(group) do
+                local id
+                for _, resource in ipairs(drill.under) do
+                    id = claimed[key(resource.position.x, resource.position.y)]
+                    if id then break end
+                end
+                if id then
+                    drill.field = id
+                    record_of_id[id].drills = record_of_id[id].drills + 1
+                else
+                    pending[#pending + 1] = drill
+                end
             end
-        end
-        if x1 then
-            local box = { { x1 - MARGIN, y1 - MARGIN }, { x2 + MARGIN, y2 + MARGIN } }
-            local found, roots, truncated
-            for _ = 1, MAX_ROUNDS do
-                found, roots, truncated = cluster(surface, name, box)
-                -- The patches the drills touch, and how far they reach.
-                local seeded = {}
+
+            local seed_keys = {}
+            local x1, y1, x2, y2
+            for _, drill in ipairs(pending) do
+                for _, resource in ipairs(drill.under) do
+                    local p = resource.position
+                    seed_keys[key(p.x, p.y)] = true
+                    x1 = x1 and math.min(x1, p.x) or p.x
+                    y1 = y1 and math.min(y1, p.y) or p.y
+                    x2 = x2 and math.max(x2, p.x) or p.x
+                    y2 = y2 and math.max(y2, p.y) or p.y
+                end
+            end
+            if x1 then
+                local margin = MARGIN
+                local box = { { x1 - margin, y1 - margin }, { x2 + margin, y2 + margin } }
+                local found, roots, capped
+                for round = 1, MAX_ROUNDS do
+                    found, roots, capped = cluster(surface, name, box)
+                    -- The patches the drills touch, and how far they reach.
+                    local seeded = {}
+                    for i, entity in ipairs(found) do
+                        local p = entity.position
+                        if seed_keys[key(p.x, p.y)] then
+                            seeded[roots[i]] = true
+                        end
+                    end
+                    local gx1, gy1, gx2, gy2
+                    for i, entity in ipairs(found) do
+                        if seeded[roots[i]] then
+                            local p = entity.position
+                            gx1 = gx1 and math.min(gx1, p.x) or p.x
+                            gy1 = gy1 and math.min(gy1, p.y) or p.y
+                            gx2 = gx2 and math.max(gx2, p.x) or p.x
+                            gy2 = gy2 and math.max(gy2, p.y) or p.y
+                        end
+                    end
+                    local inside = gx1 == nil or (
+                        gx1 - LINK > box[1][1] and gy1 - LINK > box[1][2]
+                        and gx2 + LINK < box[2][1] and gy2 + LINK < box[2][2])
+                    if capped or inside or round == MAX_ROUNDS then
+                        break
+                    end
+                    -- Each widening doubles the margin, so a few rounds reach far.
+                    margin = margin * 2
+                    box = { { gx1 - margin, gy1 - margin }, { gx2 + margin, gy2 + margin } }
+                end
+
+                local seeded, by_root = {}, {}
                 for i, entity in ipairs(found) do
                     local p = entity.position
                     if seed_keys[key(p.x, p.y)] then
                         seeded[roots[i]] = true
                     end
                 end
-                local gx1, gy1, gx2, gy2
                 for i, entity in ipairs(found) do
-                    if seeded[roots[i]] then
+                    local r = roots[i]
+                    if seeded[r] then
+                        local f = by_root[r]
+                        if not f then
+                            f = { amount = 0, tiles = 0, sx = 0, sy = 0, drills = 0 }
+                            by_root[r] = f
+                        end
                         local p = entity.position
-                        gx1 = gx1 and math.min(gx1, p.x) or p.x
-                        gy1 = gy1 and math.min(gy1, p.y) or p.y
-                        gx2 = gx2 and math.max(gx2, p.x) or p.x
-                        gy2 = gy2 and math.max(gy2, p.y) or p.y
+                        f.amount = f.amount + entity.amount
+                        f.tiles = f.tiles + 1
+                        f.sx = f.sx + p.x
+                        f.sy = f.sy + p.y
+                        f.x1 = f.x1 and math.min(f.x1, p.x) or p.x
+                        f.y1 = f.y1 and math.min(f.y1, p.y) or p.y
+                        f.x2 = f.x2 and math.max(f.x2, p.x) or p.x
+                        f.y2 = f.y2 and math.max(f.y2, p.y) or p.y
                     end
                 end
-                local inside = gx1 == nil or (
-                    gx1 - LINK > box[1][1] and gy1 - LINK > box[1][2]
-                    and gx2 + LINK < box[2][1] and gy2 + LINK < box[2][2])
-                if truncated or inside then
-                    break
+                -- A patch that reaches the edge of the searched box (or was cut
+                -- by the entity cap) may go on beyond it: its size is a lower bound.
+                for _, f in pairs(by_root) do
+                    f.truncated = capped
+                        or not (f.x1 - LINK > box[1][1] and f.y1 - LINK > box[1][2]
+                            and f.x2 + LINK < box[2][1] and f.y2 + LINK < box[2][2])
                 end
-                box = { { gx1 - MARGIN, gy1 - MARGIN }, { gx2 + MARGIN, gy2 + MARGIN } }
-            end
-
-            local seeded, by_root = {}, {}
-            for i, entity in ipairs(found) do
-                local p = entity.position
-                if seed_keys[key(p.x, p.y)] then
-                    seeded[roots[i]] = true
+                -- Number the patches in a stable order (by their first tile) and
+                -- hand each drill the patch of its first resource tile.
+                local order = {}
+                for r in pairs(by_root) do
+                    order[#order + 1] = r
                 end
-            end
-            for i, entity in ipairs(found) do
-                local r = roots[i]
-                if seeded[r] then
-                    local f = by_root[r]
-                    if not f then
-                        f = { amount = 0, tiles = 0, sx = 0, sy = 0, drills = 0, truncated = truncated }
-                        by_root[r] = f
-                    end
+                table.sort(order)
+                local id_of_root = {}
+                for _, r in ipairs(order) do
+                    id_of_root[r] = next_id
+                    by_root[r].id = next_id
+                    by_root[r].resource = name
+                    record_of_id[next_id] = by_root[r]
+                    next_id = next_id + 1
+                end
+                local root_of_key = {}
+                for i, entity in ipairs(found) do
                     local p = entity.position
-                    f.amount = f.amount + entity.amount
-                    f.tiles = f.tiles + 1
-                    f.sx = f.sx + p.x
-                    f.sy = f.sy + p.y
-                end
-            end
-            -- Number the patches in a stable order (by their first tile) and
-            -- hand each drill the patch of its first resource tile.
-            local order = {}
-            for r in pairs(by_root) do
-                order[#order + 1] = r
-            end
-            table.sort(order)
-            local id_of_root = {}
-            for _, r in ipairs(order) do
-                id_of_root[r] = next_id
-                by_root[r].id = next_id
-                next_id = next_id + 1
-            end
-            local root_of_key = {}
-            for i, entity in ipairs(found) do
-                local p = entity.position
-                root_of_key[key(p.x, p.y)] = roots[i]
-            end
-            for _, drill in ipairs(list) do
-                for _, resource in ipairs(drill.under) do
-                    local p = resource.position
-                    local r = root_of_key[key(p.x, p.y)]
-                    if r and id_of_root[r] then
-                        drill.field = id_of_root[r]
-                        by_root[r].drills = by_root[r].drills + 1
-                        break
+                    local k = key(p.x, p.y)
+                    root_of_key[k] = roots[i]
+                    local id = id_of_root[roots[i]]
+                    if id then
+                        claimed[k] = id
                     end
                 end
-            end
-            for _, r in ipairs(order) do
-                local f = by_root[r]
-                fields[#fields + 1] = {
-                    id = f.id,
-                    resource = name,
-                    amount = round(f.amount, 0),
-                    tiles = f.tiles,
-                    drills = f.drills,
-                    center = { round(f.sx / f.tiles, 1), round(f.sy / f.tiles, 1) },
-                    truncated = f.truncated or nil,
-                }
+                for _, drill in ipairs(pending) do
+                    for _, resource in ipairs(drill.under) do
+                        local p = resource.position
+                        local r = root_of_key[key(p.x, p.y)]
+                        if r and id_of_root[r] then
+                            drill.field = id_of_root[r]
+                            by_root[r].drills = by_root[r].drills + 1
+                            break
+                        end
+                    end
+                end
+                for _, r in ipairs(order) do
+                    fields[#fields + 1] = by_root[r]
+                end
             end
         end
     end
-    return fields
+    local out = {}
+    for _, f in ipairs(fields) do
+        out[#out + 1] = {
+            id = f.id,
+            resource = f.resource,
+            amount = round(f.amount, 0),
+            tiles = f.tiles,
+            drills = f.drills,
+            center = { round(f.sx / f.tiles, 1), round(f.sy / f.tiles, 1) },
+            truncated = f.truncated or nil,
+        }
+    end
+    return out
 end
 
 ---------------------------------------------------------------------------
@@ -665,6 +783,7 @@ local function finish(s)
                     field = record.field,
                     states = shares(record.states, record.n),
                     amount_left = record.amount_left,
+                    infinite = record.infinite,
                 }
             end
         end
@@ -678,7 +797,7 @@ local function finish(s)
     for id, net in pairs(s.networks) do
         local made, used
         if net.stats and net.stats.valid then
-            local now = counts(net.stats)
+            local now = counts(net.stats, true)
             made = (sum(now.made) - net.made) / seconds
             used = (sum(now.used) - net.used) / seconds
         end
@@ -695,6 +814,11 @@ local function finish(s)
     table.sort(power, function(a, b) return a.network < b.network end)
 
     local blueprint, origin = area_blueprint(s.surface, s.force, s.area)
+    -- The string and the world tile of its (0, 0) go together: a string with an
+    -- unknown origin would put every position off by an unknown shift.
+    if blueprint and not origin then
+        blueprint = nil
+    end
 
     local payload = {
         exported_by = "factorio-forge-companion",
@@ -711,7 +835,7 @@ local function finish(s)
         flows = flows,
         power = power,
         blueprint = blueprint,
-        blueprint_origin = blueprint and origin or nil,
+        blueprint_origin = origin,
     }
     -- JSON has no empty object: an empty list would be read as the wrong kind.
     if #machines == 0 then payload.machines = nil end
@@ -798,6 +922,9 @@ local function begin(s)
                 end
             end
             local list = name and under[name] or {}
+            -- An infinite resource (a geyser, a fissure) has a yield, not an
+            -- amount that runs out: no amount_left, no patch.
+            local infinite = list[1] ~= nil and read(list[1].prototype, "infinite_resource") == true
             local left = 0
             for _, resource in ipairs(list) do
                 left = left + resource.amount
@@ -805,11 +932,12 @@ local function begin(s)
             local record = {
                 entity = entity, unit = entity.unit_number, crafting = false,
                 n = 0, states = {}, missing = {}, resource = name,
-                amount_left = name and round(left, 0) or nil,
+                amount_left = (name and not infinite) and round(left, 0) or nil,
+                infinite = infinite or nil,
                 network = network_of(entity),
             }
             s.watched[entity.unit_number] = record
-            drills[#drills + 1] = { entity = entity, name = name, under = list, record = record }
+            drills[#drills + 1] = { entity = entity, name = (not infinite) and name or nil, under = list, record = record }
         end
     end
     s.crafting_count, s.drill_count = crafting_count, #drills
@@ -835,7 +963,7 @@ local function begin(s)
         local stats = net.probe and read(net.probe, "electric_network_statistics")
         if stats then
             net.stats = stats
-            local now = counts(stats)
+            local now = counts(stats, true)
             net.made, net.used = sum(now.made), sum(now.used)
         end
     end
