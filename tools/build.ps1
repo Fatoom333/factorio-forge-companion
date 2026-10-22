@@ -33,6 +33,7 @@ $contents = @(
     "constants.lua",
     "scratch.lua",
     "measure.lua",
+    "survey.lua",
     "LICENSE",
     "locale/en/strings.cfg",
     "locale/ru/strings.cfg"

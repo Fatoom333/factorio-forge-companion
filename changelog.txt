@@ -14,6 +14,14 @@ Date: 18. 10. 2026
       right lane (outputs[].lanes, per second, seen along the output belt's own direction; odd
       transport lines are left, even ones right, so an underground exit or a splitter works too). A
       lane that carried nothing is left out, and so is the field when neither did.
+    - /forge-survey [seconds] [surface=<name>] [area=x1,y1,x2,y2] watches the base for a while (default
+      60 seconds) and writes survey.json: for every crafting machine the share of the window in each
+      status, which ingredients it was short of, and crafts per second; for every mining drill its
+      resource, what is left under it and its patch; the resource patches; per item and fluid what was
+      made and used per second; per electric network watts made and used and how well it kept up; and
+      the area as a blueprint with the world tile of its origin. It works with no player.
+    - tools/headless-run.ps1 -Survey <seconds> [-SurveySurface name] [-SurveyArea x1,y1,x2,y2] runs it
+      in a game without a window.
   Changes:
     - A "lanes" that is not true or false is refused before anything is created.
     - tools/headless-run.ps1 says when the server's exit code comes from ending the idle process

@@ -13,6 +13,7 @@ local constants = require("constants")
 local gui = require("gui")
 local measure = require("measure")
 local scratch = require("scratch")
+local survey = require("survey")
 
 local OUTPUT = "factorio-forge/"
 
@@ -455,6 +456,10 @@ commands.add_command("forge-measure", { "forge.cmd-measure" }, function(event)
     measure.start(player, event.parameter)
 end)
 
+commands.add_command("forge-survey", { "forge.cmd-survey" }, function(event)
+    survey.start(caller(event), event.parameter)
+end)
+
 --- A run costs the world the ticks it asks for, whatever speed they pass at,
 --- and the player cannot step in while they do. Long runs therefore say what
 --- they will cost and wait to be asked twice; the second command within the
@@ -630,4 +635,5 @@ end)
 script.on_load(function()
     circuit.on_load()
     measure.on_load()
+    survey.on_load()
 end)
