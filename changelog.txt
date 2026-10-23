@@ -22,7 +22,14 @@ Date: 18. 10. 2026
       the area as a blueprint with the world tile of its origin. It works with no player.
     - tools/headless-run.ps1 -Survey <seconds> [-SurveySurface name] [-SurveyArea x1,y1,x2,y2] runs it
       in a game without a window.
+    - survey.json also holds labs (the share of the window in each status, kept out of machines), the
+      technology being researched, for every finite resource no drill mines the nearest charted patch
+      within 400 tiles of the surveyed box (position, distance, amount, truncated), and the count of
+      enemy spawners, worms and demolishers (the units guarding a territory that reaches the patch) near
+      every patch (fields and unmined). The box itself is searched first for an unmined patch.
   Changes:
+    - survey.json: "area" is written only when the command got area=; "bounds" is always the box the
+      survey covered.
     - A "lanes" that is not true or false is refused before anything is created.
     - tools/headless-run.ps1 says when the server's exit code comes from ending the idle process
       itself, instead of a bare -1.

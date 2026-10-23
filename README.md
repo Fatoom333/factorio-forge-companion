@@ -228,7 +228,29 @@ of the force in the area. The file holds:
   (six rounds, so a patch is followed up to about 500 tiles from its drills).
   A patch that still reaches the edge of the box, or was cut by the entity
   cap, has `"truncated": true`: its `amount` and `tiles` are then a lower
-  bound.
+  bound. `enemies` counts enemy spawners and worms (turrets of a force at war
+  with the surveyed one) within 32 tiles of the patch's box, and demolishers
+  (segmented units, which roam a territory instead of standing): those
+  guarding any territory that covers a chunk within 32 tiles of the box. It is
+  `{"spawners": n, "worms": n, "demolishers": n}`; all zeros means none were
+  found.
+- `labs`: every lab of the force in the area, with `states` as for machines
+  (`working`, `missing_science_packs`, `full_output`, ...). Labs are not in
+  `machines`. `research` is the technology being researched at the end of the
+  window, or null.
+- `unmined`: for every finite resource that none of the surveyed drills mines,
+  the nearest patch the force has charted: first inside `bounds` (distance 0),
+  then outward in rings of 64 tiles up to 400 tiles away (the search for a
+  resource stops at the first ring that holds it, after reading the next ring
+  too, and keeps the nearer hit). A resource that has no entity anywhere in
+  that band is skipped. `position` (one tile), `distance` from the
+  edge of `bounds`, `amount` of the connected patch around that tile (the
+  same rule and bounds as `fields`, so `"truncated": true` makes it a lower
+  bound) and `enemies` as above. Infinite resources (oil, geysers) are
+  left out: they have a yield, not a patch. A ring search reads at most 20000
+  resource entities per strip (hitting that cap can hide a nearer tile; it
+  does not set `truncated`, which is only about `amount`). `enemies` is always
+  written with all three counts; zeros mean none were found.
 - `flows`: per item and fluid, made and used per second on that surface, from
   the force's production statistics (the totals at the start and the end of
   the window, subtracted).
@@ -242,8 +264,10 @@ of the force in the area. The file holds:
   blueprint position. The two are written together: when the origin cannot
   be worked out, neither is.
 
-Machines and drills built during the window are not in it. `area` in the file
-is the rectangle that was used. The format is read by factorio-forge
+Machines and drills built during the window are not in it. `bounds` in the
+file is the rectangle that was covered (the box around the base unless
+`area=` was given); `area` is the rectangle asked for with `area=` and is
+absent (null) when the whole base was surveyed. The format is read by factorio-forge
 (`factorio_forge.survey`). A command that cannot start, or a run that fails,
 writes `{"kind": "survey-failed", "error": ...}` to the same file.
 

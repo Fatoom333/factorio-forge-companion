@@ -41,6 +41,30 @@ local MARGIN = 8
 -- drills of one resource farther apart get a search box each.
 local GROUP_GAP = 48
 
+-- Resources no drill mines ("unmined"): the nearest patch is looked for in
+-- charted chunks only, outward from the surveyed box in rings of RING_WIDTH
+-- tiles, up to SEARCH_RADIUS tiles from the box; the first ring that holds
+-- the resource ends the search for it (the next ring is read too, since the
+-- corner of a ring can lie farther away than the near edge of the next one).
+-- The box itself is searched first: a patch inside the base that nothing mines
+-- is at distance 0. A resource with no entity at all in the whole band is
+-- skipped after one cheap count. One strip search reads at most
+-- MAX_RING_ENTITIES entities (a hit on that cap can leave a nearer tile of the
+-- resource unseen; "truncated" does not say so, it only marks the amount).
+-- Infinite resources (oil, geysers) are left out: they have a yield, not a patch.
+local SEARCH_RADIUS = 400
+local RING_WIDTH = 64
+local MAX_RING_ENTITIES = 20000
+
+-- Enemy spawners and worms count as "near" a patch when they stand within
+-- ENEMY_RADIUS tiles of its box; at most MAX_ENEMY_ENTITIES are read per patch.
+local ENEMY_RADIUS = 32
+local MAX_ENEMY_ENTITIES = 5000
+-- Demolishers (segmented units) roam a territory, so they are counted per
+-- territory that covers a chunk within ENEMY_RADIUS of the box; at most
+-- MAX_TERRITORY_CHUNKS chunks are looked up (a larger box is sampled).
+local MAX_TERRITORY_CHUNKS = 1024
+
 -- Entity statuses that mean "waiting for something to craft with".
 local WAITING_INPUT = {
     no_ingredients = true,
@@ -423,6 +447,47 @@ local function cluster(surface, name, box)
     return found, roots, truncated
 end
 
+--- Cluster the resource entities of one kind around the seed tiles (keys of
+--- "x,y"), widening the search box until the patches the seeds touch lie well
+--- inside it or the rounds are used up. `x1..y2` bound the seed tiles. Returns
+--- the entities, their cluster roots, whether the entity cap hit, and the box.
+local function widen(surface, name, seed_keys, x1, y1, x2, y2)
+    local margin = MARGIN
+    local box = { { x1 - margin, y1 - margin }, { x2 + margin, y2 + margin } }
+    local found, roots, capped
+    for round = 1, MAX_ROUNDS do
+        found, roots, capped = cluster(surface, name, box)
+        -- The patches the seeds touch, and how far they reach.
+        local seeded = {}
+        for i, entity in ipairs(found) do
+            local p = entity.position
+            if seed_keys[key(p.x, p.y)] then
+                seeded[roots[i]] = true
+            end
+        end
+        local gx1, gy1, gx2, gy2
+        for i, entity in ipairs(found) do
+            if seeded[roots[i]] then
+                local p = entity.position
+                gx1 = gx1 and math.min(gx1, p.x) or p.x
+                gy1 = gy1 and math.min(gy1, p.y) or p.y
+                gx2 = gx2 and math.max(gx2, p.x) or p.x
+                gy2 = gy2 and math.max(gy2, p.y) or p.y
+            end
+        end
+        local inside = gx1 == nil or (
+            gx1 - LINK > box[1][1] and gy1 - LINK > box[1][2]
+            and gx2 + LINK < box[2][1] and gy2 + LINK < box[2][2])
+        if capped or inside or round == MAX_ROUNDS then
+            break
+        end
+        -- Each widening doubles the margin, so a few rounds reach far.
+        margin = margin * 2
+        box = { { gx1 - margin, gy1 - margin }, { gx2 + margin, gy2 + margin } }
+    end
+    return found, roots, capped, box
+end
+
 --- Drills of one resource, split into groups of drills that lie near each other
 --- (no more than GROUP_GAP tiles apart), so that two outposts far apart are
 --- searched on their own and not through one box spanning the map between them.
@@ -480,10 +545,73 @@ local function group_drills(list)
     return groups
 end
 
+--- Enemy spawners, worms (turrets of a force that is an enemy of `force`) and
+--- demolishers (segmented units guarding a territory that reaches the box)
+--- within ENEMY_RADIUS tiles of the box x1,y1..x2,y2. Always a table with the
+--- three counts (an empty Lua table would be written as a JSON list, not an
+--- object), so all zeros means none were found.
+local function enemies_near(surface, force, x1, y1, x2, y2)
+    local counts_by_kind = { spawners = 0, worms = 0, demolishers = 0 }
+    local hostile = {}
+    pcall(function()
+        for _, other in pairs(game.forces) do
+            if other ~= force and force.is_enemy(other) then
+                hostile[#hostile + 1] = other
+            end
+        end
+    end)
+    if #hostile == 0 then
+        return counts_by_kind
+    end
+    local area = { { x1 - ENEMY_RADIUS, y1 - ENEMY_RADIUS }, { x2 + ENEMY_RADIUS, y2 + ENEMY_RADIUS } }
+    pcall(function()
+        for _, entity in pairs(surface.find_entities_filtered({
+            area = area, type = { "unit-spawner", "turret" }, force = hostile, limit = MAX_ENEMY_ENTITIES,
+        })) do
+            if entity.type == "unit-spawner" then
+                counts_by_kind.spawners = counts_by_kind.spawners + 1
+            else
+                counts_by_kind.worms = counts_by_kind.worms + 1
+            end
+        end
+    end)
+    -- Demolishers: the territories of the chunks around the box, each unit once.
+    local territory_ok = pcall(function()
+        local cx1, cy1 = math.floor(area[1][1] / 32), math.floor(area[1][2] / 32)
+        local cx2, cy2 = math.floor(area[2][1] / 32), math.floor(area[2][2] / 32)
+        local total = (cx2 - cx1 + 1) * (cy2 - cy1 + 1)
+        local step = math.max(1, math.ceil(math.sqrt(total / MAX_TERRITORY_CHUNKS)))
+        local seen, n = {}, 0
+        for cx = cx1, cx2, step do
+            for cy = cy1, cy2, step do
+                local territory = surface.get_territory_for_chunk({ x = cx, y = cy })
+                if territory and territory.valid then
+                    for _, unit in pairs(territory.get_segmented_units()) do
+                        local id = unit.unit_number
+                        if id and not seen[id] then
+                            seen[id] = true
+                            n = n + 1
+                        end
+                    end
+                end
+            end
+        end
+        counts_by_kind.demolishers = n
+    end)
+    if not territory_ok then
+        -- A build without territories: look for the units themselves.
+        pcall(function()
+            counts_by_kind.demolishers = #surface.find_entities_filtered({
+                area = area, type = "segmented-unit", force = hostile, limit = MAX_ENEMY_ENTITIES })
+        end)
+    end
+    return counts_by_kind
+end
+
 --- Patches under the drills. `drills` holds {entity, name, under} where `name`
 --- is the resource the drill mines and `under` the resource entities of that
 --- name beneath it. Sets drill.field and returns the field records.
-local function build_fields(surface, drills, first_id)
+local function build_fields(surface, force, drills, first_id)
     local by_resource = {}
     for _, drill in ipairs(drills) do
         if drill.name then
@@ -532,39 +660,7 @@ local function build_fields(surface, drills, first_id)
                 end
             end
             if x1 then
-                local margin = MARGIN
-                local box = { { x1 - margin, y1 - margin }, { x2 + margin, y2 + margin } }
-                local found, roots, capped
-                for round = 1, MAX_ROUNDS do
-                    found, roots, capped = cluster(surface, name, box)
-                    -- The patches the drills touch, and how far they reach.
-                    local seeded = {}
-                    for i, entity in ipairs(found) do
-                        local p = entity.position
-                        if seed_keys[key(p.x, p.y)] then
-                            seeded[roots[i]] = true
-                        end
-                    end
-                    local gx1, gy1, gx2, gy2
-                    for i, entity in ipairs(found) do
-                        if seeded[roots[i]] then
-                            local p = entity.position
-                            gx1 = gx1 and math.min(gx1, p.x) or p.x
-                            gy1 = gy1 and math.min(gy1, p.y) or p.y
-                            gx2 = gx2 and math.max(gx2, p.x) or p.x
-                            gy2 = gy2 and math.max(gy2, p.y) or p.y
-                        end
-                    end
-                    local inside = gx1 == nil or (
-                        gx1 - LINK > box[1][1] and gy1 - LINK > box[1][2]
-                        and gx2 + LINK < box[2][1] and gy2 + LINK < box[2][2])
-                    if capped or inside or round == MAX_ROUNDS then
-                        break
-                    end
-                    -- Each widening doubles the margin, so a few rounds reach far.
-                    margin = margin * 2
-                    box = { { gx1 - margin, gy1 - margin }, { gx2 + margin, gy2 + margin } }
-                end
+                local found, roots, capped, box = widen(surface, name, seed_keys, x1, y1, x2, y2)
 
                 local seeded, by_root = {}, {}
                 for i, entity in ipairs(found) do
@@ -651,7 +747,155 @@ local function build_fields(surface, drills, first_id)
             drills = f.drills,
             center = { round(f.sx / f.tiles, 1), round(f.sy / f.tiles, 1) },
             truncated = f.truncated or nil,
+            enemies = enemies_near(surface, force, f.x1, f.y1, f.x2, f.y2),
         }
+    end
+    return out
+end
+
+--- The resource prototypes that have a patch to speak of (not the infinite
+--- ones), as {name -> true}.
+local function finite_resources()
+    local names = {}
+    pcall(function()
+        for name, proto in pairs(prototypes.get_entity_filtered({ { filter = "type", type = "resource" } })) do
+            if read(proto, "infinite_resource") ~= true then
+                names[name] = true
+            end
+        end
+    end)
+    return names
+end
+
+--- Distance from the box `b` (left, top, right, bottom) to a point; 0 inside.
+local function distance_to_box(b, x, y)
+    local dx = math.max(b[1] - x, 0, x - b[3])
+    local dy = math.max(b[2] - y, 0, y - b[4])
+    return math.sqrt(dx * dx + dy * dy)
+end
+
+--- The four boxes of the ring between `inner` and `outer` tiles away from the
+--- box `b`, as areas; they do not overlap.
+local function ring_strips(b, inner, outer)
+    local l, t, r, d = b[1], b[2], b[3], b[4]
+    return {
+        { { l - outer, t - outer }, { r + outer, t - inner } },
+        { { l - outer, d + inner }, { r + outer, d + outer } },
+        { { l - outer, t - inner }, { l - inner, d + inner } },
+        { { r + inner, t - inner }, { r + outer, d + inner } },
+    }
+end
+
+--- The nearest charted entity of resource `name` in the strips (areas), as
+--- entity and distance from `bounds`; nothing farther than SEARCH_RADIUS.
+local function nearest_in(surface, force, name, bounds, strips)
+    local best, best_distance
+    for _, strip in ipairs(strips) do
+        local ok, found = pcall(function()
+            return surface.find_entities_filtered({
+                area = strip, name = name, type = "resource", limit = MAX_RING_ENTITIES })
+        end)
+        if ok then
+            for _, entity in ipairs(found) do
+                local p = entity.position
+                if force.is_chunk_charted(surface, { x = math.floor(p.x / 32), y = math.floor(p.y / 32) }) then
+                    local distance = distance_to_box(bounds, p.x, p.y)
+                    if distance <= SEARCH_RADIUS and (not best_distance or distance < best_distance) then
+                        best, best_distance = entity, distance
+                    end
+                end
+            end
+        end
+    end
+    return best, best_distance
+end
+
+--- The patch around `best` (flood as for the fields): amount, box and whether
+--- the amount is only a lower bound.
+local function measure_patch(surface, name, best)
+    local p = best.position
+    local seed = { [key(p.x, p.y)] = true }
+    local found, roots, hit_cap, box = widen(surface, name, seed, p.x, p.y, p.x, p.y)
+    local root
+    for i, entity in ipairs(found) do
+        local q = entity.position
+        if seed[key(q.x, q.y)] then
+            root = roots[i]
+            break
+        end
+    end
+    local amount, x1, y1, x2, y2 = 0, nil, nil, nil, nil
+    for i, entity in ipairs(found) do
+        if root and roots[i] == root then
+            local q = entity.position
+            amount = amount + entity.amount
+            x1 = x1 and math.min(x1, q.x) or q.x
+            y1 = y1 and math.min(y1, q.y) or q.y
+            x2 = x2 and math.max(x2, q.x) or q.x
+            y2 = y2 and math.max(y2, q.y) or q.y
+        end
+    end
+    local truncated = hit_cap
+    if x1 then
+        truncated = truncated or not (x1 - LINK > box[1][1] and y1 - LINK > box[1][2]
+            and x2 + LINK < box[2][1] and y2 + LINK < box[2][2])
+    else
+        x1, y1, x2, y2 = p.x, p.y, p.x, p.y
+        amount = best.amount
+        truncated = true
+    end
+    return amount, x1, y1, x2, y2, truncated
+end
+
+--- For every finite resource that `mined` does not hold, the nearest patch the
+--- force has charted within SEARCH_RADIUS tiles of `bounds` ({left, top,
+--- right, bottom}), the box itself included (distance 0). One count per
+--- resource to see whether it exists at all, then a search per ring.
+local function unmined_patches(surface, force, bounds, mined)
+    local pending = {}
+    for name in pairs(finite_resources()) do
+        if not mined[name] then
+            pending[#pending + 1] = name
+        end
+    end
+    table.sort(pending)
+    local band = { { bounds[1] - SEARCH_RADIUS, bounds[2] - SEARCH_RADIUS },
+        { bounds[3] + SEARCH_RADIUS, bounds[4] + SEARCH_RADIUS } }
+    local out = {}
+    for _, name in ipairs(pending) do
+        local counted, n = pcall(function()
+            return surface.count_entities_filtered({ area = band, name = name, type = "resource", limit = 1 })
+        end)
+        local best, best_distance
+        if counted and n > 0 then
+            best, best_distance = nearest_in(surface, force, name, bounds,
+                { { { bounds[1], bounds[2] }, { bounds[3], bounds[4] } } })
+            local inner = 0
+            while not best and inner < SEARCH_RADIUS do
+                local outer = math.min(inner + RING_WIDTH, SEARCH_RADIUS)
+                best, best_distance = nearest_in(surface, force, name, bounds, ring_strips(bounds, inner, outer))
+                if best and outer < SEARCH_RADIUS then
+                    local farther = math.min(outer + RING_WIDTH, SEARCH_RADIUS)
+                    local other, other_distance = nearest_in(surface, force, name, bounds,
+                        ring_strips(bounds, outer, farther))
+                    if other and other_distance < best_distance then
+                        best, best_distance = other, other_distance
+                    end
+                end
+                inner = outer
+            end
+        end
+        if best then
+            local amount, x1, y1, x2, y2, truncated = measure_patch(surface, name, best)
+            out[#out + 1] = {
+                resource = name,
+                position = pos(best),
+                distance = round(best_distance, 1),
+                amount = round(amount, 0),
+                truncated = truncated or nil,
+                enemies = enemies_near(surface, force, x1, y1, x2, y2),
+            }
+        end
     end
     return out
 end
@@ -757,11 +1001,18 @@ local function finish(s)
 
     local machines = {}
     local miners = {}
-    local drills_for_fields = {}
+    local labs = {}
     for _, record in pairs(s.watched) do
         local entity = record.entity
         if entity.valid and record.n > 0 then
-            if record.crafting then
+            if record.lab then
+                labs[#labs + 1] = {
+                    unit = record.unit,
+                    name = entity.name,
+                    position = pos(entity),
+                    states = shares(record.states, record.n),
+                }
+            elseif record.crafting then
                 local crafted = read(entity, "products_finished") or 0
                 machines[#machines + 1] = {
                     unit = record.unit,
@@ -790,6 +1041,13 @@ local function finish(s)
     end
     table.sort(machines, function(a, b) return a.unit < b.unit end)
     table.sort(miners, function(a, b) return a.unit < b.unit end)
+    table.sort(labs, function(a, b) return a.unit < b.unit end)
+
+    local research
+    pcall(function()
+        local current = s.force.current_research
+        research = current and current.name or nil
+    end)
 
     local flows = flows_between(production_now(s), s.production, seconds)
 
@@ -827,10 +1085,17 @@ local function finish(s)
         tick = game.tick,
         force = s.force.name,
         surface = s.surface.name,
-        area = { { s.area.left_top.x, s.area.left_top.y }, { s.area.right_bottom.x, s.area.right_bottom.y } },
+        area = s.asked_area and {
+            { s.asked_area.left_top.x, s.asked_area.left_top.y },
+            { s.asked_area.right_bottom.x, s.asked_area.right_bottom.y },
+        } or nil,
+        bounds = { { s.area.left_top.x, s.area.left_top.y }, { s.area.right_bottom.x, s.area.right_bottom.y } },
         window_s = round(seconds, 2),
         machines = machines,
         miners = miners,
+        labs = labs,
+        research = research,
+        unmined = s.unmined,
         fields = s.fields,
         flows = flows,
         power = power,
@@ -840,6 +1105,8 @@ local function finish(s)
     -- JSON has no empty object: an empty list would be read as the wrong kind.
     if #machines == 0 then payload.machines = nil end
     if #miners == 0 then payload.miners = nil end
+    if #labs == 0 then payload.labs = nil end
+    if not s.unmined or #s.unmined == 0 then payload.unmined = nil end
     if #s.fields == 0 then payload.fields = nil end
     if #power == 0 then payload.power = nil end
     if not next(flows) then payload.flows = nil end
@@ -903,6 +1170,16 @@ local function begin(s)
             crafting_count = crafting_count + 1
         end
     end
+    -- Labs are watched like machines (the share of the window in each status)
+    -- but kept apart: they craft nothing.
+    for _, entity in pairs(surface.find_entities_filtered({ area = area, force = force, type = "lab" })) do
+        if entity.unit_number then
+            s.watched[entity.unit_number] = {
+                entity = entity, unit = entity.unit_number, lab = true, crafting = false,
+                n = 0, states = {}, missing = {},
+            }
+        end
+    end
 
     local drills = {}
     for _, entity in pairs(surface.find_entities_filtered({ area = area, force = force, type = "mining-drill" })) do
@@ -942,10 +1219,20 @@ local function begin(s)
     end
     s.crafting_count, s.drill_count = crafting_count, #drills
 
-    s.fields = build_fields(surface, drills, 1)
+    s.fields = build_fields(surface, force, drills, 1)
     for _, drill in ipairs(drills) do
         drill.record.field = drill.field
     end
+
+    -- Resources no surveyed drill mines: where the nearest patch lies. Read once.
+    local mined = {}
+    for _, drill in ipairs(drills) do
+        if drill.record.resource then
+            mined[drill.record.resource] = true
+        end
+    end
+    s.unmined = unmined_patches(surface, force, {
+        area.left_top.x, area.left_top.y, area.right_bottom.x, area.right_bottom.y }, mined)
 
     -- A pole of a network is the best place to read its statistics from; a
     -- machine of the network will do when no pole stands in the area.
@@ -1008,6 +1295,7 @@ function M.start(player, text)
         surface = surface,
         force = force,
         area = area,
+        asked_area = options.area,
         player_index = player and player.index or nil,
         started = game.tick,
         window_ticks = math.floor(options.seconds * constants.ticks_per_second),
