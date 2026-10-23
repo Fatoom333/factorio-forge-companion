@@ -25,7 +25,8 @@ Date: 18. 10. 2026
     - survey.json also holds labs (the share of the window in each status, kept out of machines), the
       technology being researched, for every finite resource no drill mines the nearest charted patch
       within 400 tiles of the surveyed box (position, distance, amount, truncated), and the count of
-      enemy spawners and worms near every patch (fields and unmined).
+      enemy spawners, worms and demolishers (the units guarding a territory that reaches the patch) near
+      every patch (fields and unmined). The box itself is searched first for an unmined patch.
   Changes:
     - survey.json: "area" is written only when the command got area=; "bounds" is always the box the
       survey covered.
